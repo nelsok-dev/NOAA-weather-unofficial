@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOAA Weather Unofficial: NWS Radar, Alerts &amp; Forecast Discussion</title>
+  <meta name="description" content="Free iPhone and iPad app with live NEXRAD Doppler radar, NWS tornado and severe storm alerts, SPC outlooks, and your local office's full Area Forecast Discussion. No ads, no account.">
+  <link rel="canonical" href="https://nelsok-dev.github.io/NOAA-weather-unofficial/">
+
+  <!-- iPhone Safari shows its own "Open in App Store" banner for this app. -->
+  <meta name="apple-itunes-app" content="app-id=6771460673">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NOAA Weather Unofficial — the raw NWS products, not a summary">
+  <meta property="og:description" content="Live NEXRAD radar, NWS alerts, SPC outlooks and the full forecast discussion. Free, no ads, no account.">
+  <meta property="og:url" content="https://nelsok-dev.github.io/NOAA-weather-unofficial/">
+  <meta property="og:image" content="https://nelsok-dev.github.io/NOAA-weather-unofficial/img/shot-1-TrackEveryStorm.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" type="image/png" href="img/favicon.png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+
+  <!-- Lets search engines show this page as an app listing. No rating is
+       claimed here: a rating copied into the page would go stale the day
+       it was written. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "MobileApplication",
+    "name": "NOAA Weather Unofficial: Radar",
+    "operatingSystem": "iOS 16.0 or later",
+    "applicationCategory": "WeatherApplication",
+    "description": "Live NEXRAD Doppler radar, NWS tornado and severe storm alerts, SPC convective outlooks and your local NWS office's full Area Forecast Discussion. Free, no ads, no account.",
+    "installUrl": "https://apps.apple.com/us/app/id6771460673",
+    "image": "https://nelsok-dev.github.io/NOAA-weather-unofficial/img/icon-256.png",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #f5f7fa; --surface: #ffffff; --text: #14213d; --muted: #4a5568;
+      --accent: #0a3d62; --accent-2: #1e6fa8; --line: #e2e8f0; --chip: #e8f0fe;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1320; --surface: #121c2c; --text: #e6edf6; --muted: #a3b1c2;
+        --accent: #8cc4ff; --accent-2: #5aa2e8; --line: #22324a; --chip: #172a45;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-2); }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+    header.hero {
+      background: linear-gradient(160deg, #06265c 0%, #0a3d8f 55%, #1d6fd6 100%);
+      color: #fff; padding: 56px 0 64px; text-align: center;
+    }
+    .hero img.icon { width: 104px; height: 104px; border-radius: 23px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    .hero h1 { font-size: clamp(1.7rem, 4.5vw, 2.6rem); line-height: 1.2; margin-top: 22px; letter-spacing: -.5px; }
+    .hero .sub { font-size: clamp(1rem, 2.4vw, 1.2rem); opacity: .9; margin: 12px auto 0; max-width: 640px; }
+    .hero .facts { margin-top: 16px; font-size: .95rem; opacity: .85; }
+    .badge { display: inline-block; margin-top: 28px; }
+    .badge img { height: 54px; width: auto; display: block; }
+
+    section { padding: 56px 0 8px; }
+    h2 { font-size: clamp(1.35rem, 3vw, 1.75rem); color: var(--accent); letter-spacing: -.3px; margin-bottom: 8px; }
+    .lede { color: var(--muted); max-width: 720px; margin-bottom: 28px; font-size: 1.05rem; }
+
+    .shots { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 18px; scroll-snap-type: x mandatory; }
+    .shots img { flex: 0 0 auto; width: min(230px, 62vw); height: auto; border-radius: 18px; scroll-snap-align: start;
+                 box-shadow: 0 6px 22px rgba(0,0,0,.18); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 20px; }
+    .card h3 { font-size: 1.05rem; margin-bottom: 8px; color: var(--text); }
+    .card p, .card li { color: var(--muted); font-size: .97rem; }
+    .card ul { list-style: none; }
+    .card li { padding-left: 18px; position: relative; margin: 4px 0; }
+    .card li::before { content: ""; position: absolute; left: 2px; top: .7em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
+
+    .highlight { background: var(--chip); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+    .highlight blockquote { font-family: Georgia, "Times New Roman", serif; font-size: 1.08rem; color: var(--text);
+                            border-left: 4px solid var(--accent-2); padding-left: 16px; margin: 14px 0; }
+
+    .cta { text-align: center; padding: 56px 0 24px; }
+    footer { border-top: 1px solid var(--line); margin-top: 48px; padding: 28px 0 48px; color: var(--muted); font-size: .9rem; }
+    footer p + p { margin-top: 10px; }
+    .disclaimer { font-size: .88rem; }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img class="icon" src="img/icon-256.png" alt="NOAA Weather Unofficial app icon" width="104" height="104">
+    <h1>National Weather Service data, unfiltered.</h1>
+    <p class="sub">Live NEXRAD Doppler radar, NWS tornado and severe storm alerts, and the forecast discussion your local meteorologist wrote by hand — the raw NWS products, not a summary of them.</p>
+    <p class="facts">Free · No ads · No account · iPhone &amp; iPad</p>
+    <a class="badge" href="https://apps.apple.com/us/app/id6771460673">
+      <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/white/en-us" alt="Download on the App Store" width="162" height="54">
+    </a>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="wrap">
+      <h2>See it before you install it</h2>
+      <div class="shots" role="list">
+        <img role="listitem" src="img/shot-1-TrackEveryStorm.jpg" alt="Three hours of NEXRAD radar history with a storm crossing the map" loading="lazy" width="414" height="900">
+        <img role="listitem" src="img/shot-2-ForecastDiscussion.jpg" alt="The Area Forecast Discussion, highlighting a forecaster's note about a possible funnel cloud" loading="lazy" width="414" height="900">
+        <img role="listitem" src="img/shot-3-KnowFirst.jpg" alt="A Flash Flood Warning over the radar map" loading="lazy" width="414" height="900">
+        <img role="listitem" src="img/shot-4-StraightFromTheSource.jpg" alt="Current conditions and the 7-day NWS forecast" loading="lazy" width="414" height="900">
+        <img role="listitem" src="img/shot-5-PlanEveryHour.jpg" alt="Hourly rain chance, wind and gusts" loading="lazy" width="414" height="900">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="highlight">
+        <h2>Read the meteorologist, not an icon</h2>
+        <p>Twice a day, every National Weather Service office publishes an <strong>Area Forecast Discussion</strong>: the forecaster's own reasoning — what the models disagree on, what they're watching, how confident they are. Most weather apps never show it. This one puts it on the main screen, in full and unedited.</p>
+        <blockquote>"…could acquire some low-level rotation…potentially resulting in transient low-level mesocyclone features capable of producing a funnel cloud or brief tornado."</blockquote>
+        <p>That's a real line from a discussion, hours before the storms. It's the difference between "40% chance of storms" and knowing what the storms might do.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Everything the NWS issues, in one place</h2>
+      <p class="lede">Straight from NOAA and National Weather Service feeds, credited to the office or station that produced it.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Tornado, storm &amp; severe weather alerts</h3>
+          <ul>
+            <li>Push alerts for NWS warnings, watches and advisories where you are: tornado, severe thunderstorm, flash flood, winter storm, hurricane, heat and more</li>
+            <li>Your own severity threshold and quiet hours</li>
+            <li>Alert map filterable by warning, watch and advisory</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Live Doppler radar</h3>
+          <ul>
+            <li>NOAA RIDGE2 NEXRAD, the feed meteorologists use</li>
+            <li>1, 2 or 3-hour loops with a drag-to-scrub timeline</li>
+            <li>Reflectivity, Storm Layer, Storm Tops and Precipitation Type — rain and snow shown separately</li>
+            <li>Warning polygons drawn over the storms</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Storm Center</h3>
+          <ul>
+            <li>SPC convective outlooks, Marginal through High risk</li>
+            <li>SPC mesoscale discussions as they're issued</li>
+            <li>12 raw NWS text products: Hazardous Weather Outlook, Local Storm Reports, winter and fire weather, flood outlooks and more</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Satellite</h3>
+          <ul>
+            <li>Animated GOES-East imagery</li>
+            <li>GeoColor, Infrared, Visible, Air Mass, Dust and Fire Temperature</li>
+            <li>Follow smoke, dust and fire hot spots, not just clouds</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Climate &amp; records</h3>
+          <ul>
+            <li>Today against the 1991–2020 normal and the all-time record</li>
+            <li>Rainfall and snowfall to date against normal</li>
+            <li>Dry streaks counted from the daily records</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Forecast &amp; widgets</h3>
+          <ul>
+            <li>7-day NWS forecast plus a 14-day outlook, clearly marked as model guidance</li>
+            <li>Hourly timeline, air quality, UV and full conditions</li>
+            <li>Six widget sizes, including three Lock Screen widgets</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="grid">
+        <div class="card">
+          <h3>Who it's for</h3>
+          <p>Storm spotters and chasers, weather hobbyists, farmers, boaters, and anyone who has ever wanted to know <em>why</em> the forecast changed — not just that it did.</p>
+        </div>
+        <div class="card">
+          <h3>Private by design</h3>
+          <p>No account, no ads, no tracking, no analytics. Your location is used to fetch your forecast and is never stored or sold. <a href="https://nelsok-dev.github.io/noaa-weather-privacy/">Read the privacy policy</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="cta wrap">
+    <h2>Built for people who read the discussion before they trust the icon.</h2>
+    <a class="badge" href="https://apps.apple.com/us/app/id6771460673">
+      <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us" alt="Download on the App Store" width="162" height="54">
+    </a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Questions or ideas? Every message gets read: <a id="contact" href="#">email the developer</a>.</p>
+    <p><a href="https://nelsok-dev.github.io/noaa-weather-privacy/">Privacy policy</a></p>
+    <p class="disclaimer">NOAA Weather Unofficial is an independent third-party app. It is not created, endorsed, or affiliated with NOAA, the National Weather Service, or any U.S. government agency. Weather data is public information published by NOAA and the NWS.</p>
+    <p class="disclaimer">Apple and the App Store are trademarks of Apple Inc.</p>
+  </div>
+</footer>
+
+<script>
+  // Assembled at runtime, as in the app: keeps the address out of the page
+  // source for the crudest scrapers while still one tap away for people.
+  (function () {
+    var a = document.getElementById('contact');
+    var addr = ['nelsokdev', 'gmail.com'].join('@');
+    a.href = 'mailto:' + addr + '?subject=' + encodeURIComponent('NOAA Weather Unofficial');
+  })();
+</script>
+</body>
+</html>
