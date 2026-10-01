@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Privacy Policy — NOAA Weather Unofficial</title>
+  <!--
+    Bundled copy of the privacy policy. The canonical, user-facing version is
+    published at https://nelsok-dev.github.io/noaa-weather-privacy/ — that is the
+    URL the Settings screen opens and the URL registered with App Store Connect.
+    Keep this file's WORDING in sync with privacy-policy/index.html in the repo
+    root whenever data handling changes; only the styling differs, so that this
+    copy matches the app's dark theme.
+  -->
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,"Helvetica Neue",sans-serif;background:#001422;color:rgba(255,255,255,.85);padding:28px 20px 60px;max-width:640px;margin:0 auto;line-height:1.6}
+    h1{font-size:20px;font-weight:800;color:#fff;margin-bottom:4px}
+    .sub{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:24px}
+    h2{font-size:13px;font-weight:700;color:#5AC8FA;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 8px}
+    h3{font-size:12px;font-weight:700;color:rgba(255,255,255,.85);margin:14px 0 4px}
+    p{font-size:13px;color:rgba(255,255,255,.7);margin-bottom:10px}
+    ul{font-size:13px;color:rgba(255,255,255,.7);margin:0 0 10px 18px}
+    li{margin-bottom:4px}
+    a{color:#5AC8FA}
+    code{background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px;font-size:12px}
+    .card{background:rgba(0,55,110,.45);border:.5px solid rgba(0,133,202,.2);border-radius:11px;padding:14px 16px;margin-bottom:18px}
+    .disclaimer{font-size:12px;color:rgba(255,255,255,.5)}
+    .disclaimer strong{color:#f66}
+    .tldr{background:rgba(0,133,202,.16);border-left:3px solid #5AC8FA;border-radius:8px;padding:14px 16px;margin-bottom:20px}
+    .tldr p{margin-bottom:0}
+    table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:12px;display:block;overflow-x:auto}
+    th,td{text-align:left;padding:6px 8px;border-bottom:.5px solid rgba(255,255,255,.1);vertical-align:top;color:rgba(255,255,255,.7)}
+    th{color:#5AC8FA;font-weight:700}
+    small{color:rgba(255,255,255,.4)}
+    .footer{font-size:11px;color:rgba(255,255,255,.3);margin-top:32px;border-top:.5px solid rgba(255,255,255,.08);padding-top:16px}
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <div class="sub">NOAA Weather Unofficial &mdash; Effective August 1, 2026</div>
+
+  <div class="card">
+    <p class="disclaimer">
+      <strong>This is an unofficial app.</strong> It is not created, endorsed, or sponsored by NOAA, the National Weather Service, NASA, or any U.S. government agency.
+    </p>
+  </div>
+
+  <div class="tldr">
+    <p><strong>In short:</strong> there is no account, no advertising, no analytics, and no tracking. The app has no server that stores anything about you &mdash; with one exception: if you turn on push notifications, a small alert relay we operate has to keep your device's notification token and the location(s) you want alerts for, because that is the only way to know which device to warn when the National Weather Service issues something for your area. Turning notifications off deletes that record.</p>
+  </div>
+
+  <h2>Location Data</h2>
+  <h3>When your location is read</h3>
+  <p>Location access is optional and always requested through the standard iOS permission prompt. If you grant it, the app reads your device's location <strong>periodically while you are using it</strong> &mdash; not only when you tap the location button. It may read your position when the app starts or returns to the foreground, when it refreshes alerts, and to keep the home screen widget current. Readings are cached for about 20 minutes so the app is not continuously polling your position.</p>
+  <p>The app does <strong>not</strong> use background location and cannot read your position while it is closed. Severe-weather alerts arrive by push notification, which does not require background location.</p>
+  <p>You can deny or revoke location permission at any time in iOS Settings. The app remains fully usable &mdash; you can search for any city or ZIP code instead.</p>
+  <h3>Where your location is sent</h3>
+  <p>Your coordinates are sent to the public data services listed under &ldquo;Third-Party Services&rdquo; below to look up the forecast, alerts, tides, marine conditions, and air quality for that spot. Those requests are made directly from your device. Apart from the alert relay described next, we do not operate any server that receives or stores your location.</p>
+
+  <h2>Push Notifications &amp; the Alert Relay</h2>
+  <p>Push notifications are <strong>opt-in</strong>. If you enable them, the app registers with the NOAA Alert Relay, a small server we operate at <code>noaa-alert-relay.nelsok.workers.dev</code>, hosted on Cloudflare Workers.</p>
+  <h3>What the relay receives and stores</h3>
+  <table>
+    <tr><th>Data</th><th>Why</th></tr>
+    <tr><td><strong>APNs device token</strong></td><td>A per-install identifier issued by Apple. It is the address a push is delivered to; without it we cannot notify your device.</td></tr>
+    <tr><td><strong>Your selected location</strong> (latitude, longitude, NWS forecast zone and office)</td><td>To match alerts issued for that area.</td></tr>
+    <tr><td><strong>Your device's current location</strong> (latitude, longitude, NWS zone)</td><td>Stored <em>in addition to</em> your selected location, and only if you have granted location permission, so you are warned about where you actually are as well as your saved location &mdash; for example while travelling. Sent only when the app is open; not tracked in the background.</td></tr>
+    <tr><td><strong>Severity filter</strong></td><td>Which alert tiers you have chosen to be notified about.</td></tr>
+    <tr><td><strong>A random installation identifier</strong></td><td>Generated on your device, unique to this install, not derived from any device or advertising identifier. It proves a request to change or delete your notification record came from your device. Only a one-way cryptographic hash of it is stored, never the value itself.</td></tr>
+    <tr><td><strong>A record of alerts already sent to your device</strong></td><td>Alert identifiers with timestamps, so the same warning is not delivered twice. Deleted automatically once the alert expires.</td></tr>
+  </table>
+  <p>The relay periodically checks the NWS public alert feed and sends a push through Apple's APNs service when an active alert covers one of your locations. It does not receive your name, email address, contacts, device identifiers beyond the APNs token, or anything tied to a user account. It is never used for advertising or analytics.</p>
+  <h3>Retention and deletion</h3>
+  <p><strong>Only your current locations are kept &mdash; no location history.</strong> Each update overwrites the previous values. Your record is deleted when you turn notifications off in the app, and automatically when Apple reports your device token as no longer valid (uninstalling the app, or disabling notifications at the system level).</p>
+  <p><strong>Opt-out.</strong> Turn off the notifications switch in Settings, or disable notifications in iOS Settings &rarr; NOAA Weather Unofficial &rarr; Notifications.</p>
+
+  <h2>Stored on Your Device</h2>
+  <p>The following is kept locally and never transmitted to us:</p>
+  <ul>
+    <li>Your saved locations and the currently active one</li>
+    <li>Your settings &mdash; units, quiet hours, severity filter, briefing time</li>
+    <li>Recent alert history and which alerts you have already seen</li>
+    <li>Cached weather and map data, so the app works briefly without a connection</li>
+    <li>The random installation identifier described above</li>
+  </ul>
+  <p>Deleting the app removes all of it.</p>
+
+  <h2>Home Screen Widget</h2>
+  <p>The optional home screen and Lock Screen widgets read your saved location and unit preferences from a storage area shared with the app, and fetch forecast data directly from the National Weather Service API to refresh. The widget sends nothing to us and has no access to your location beyond what the app has already stored.</p>
+
+  <h2>Third-Party Services</h2>
+  <p>The app makes requests directly from your device to the public services below. Each has its own privacy practices, and each can see your IP address as part of any normal internet request. We have no control over, and receive no data from, these services.</p>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Receives</th></tr>
+    <tr><td>api.weather.gov <small>NWS/NOAA</small></td><td>Forecasts, conditions, alerts</td><td>Coordinates or forecast zone</td></tr>
+    <tr><td>opengeo.ncep.noaa.gov <small>RIDGE2</small></td><td>NEXRAD radar imagery</td><td>Map area viewed</td></tr>
+    <tr><td>gibs.earthdata.nasa.gov <small>NASA</small></td><td>GOES satellite imagery</td><td>Map area viewed</td></tr>
+    <tr><td>mapservices.weather.noaa.gov <small>NOAA NHC, WPC, CPC</small></td><td>Hurricane tracks; winter storm severity and snow/ice odds; 6–14 day outlook</td><td>Location rounded to ~1 km (winter and outlook lookups); nothing for hurricane tracks</td></tr>
+    <tr><td>nowcoast.noaa.gov <small>NOAA</small></td><td>Lightning strike density map</td><td>Map area viewed</td></tr>
+    <tr><td>tile.openstreetmap.org</td><td>Map base layer</td><td>Map area viewed</td></tr>
+    <tr><td>geocoding-api.open-meteo.com <small>Open-Meteo</small></td><td>City / ZIP search</td><td>Search text</td></tr>
+    <tr><td>photon.komoot.io <small>Photon (OSM)</small></td><td>Address search fallback, reverse lookup</td><td>Search text or coordinates</td></tr>
+    <tr><td>geocoding.geo.census.gov <small>US Census</small></td><td>ZIP code from coordinates</td><td>Coordinates</td></tr>
+    <tr><td>data.epa.gov <small>US EPA</small></td><td>UV index</td><td>Your ZIP code</td></tr>
+    <tr><td>api.tidesandcurrents.noaa.gov <small>CO-OPS</small></td><td>Tide predictions</td><td>Nearest tide station</td></tr>
+    <tr><td>api.open-meteo.com <small>Open-Meteo</small></td><td>Long-range outlook (days 8&ndash;14) and next-2-hour precipitation timing &mdash; both model guidance</td><td>Coordinates</td></tr>
+    <tr><td>data.rcc-acis.org <small>Regional Climate Centers</small></td><td>Daily climate history (rainfall streaks)</td><td>Weather station ID</td></tr>
+    <tr><td>marine-api.open-meteo.com <small>Open-Meteo</small></td><td>Wave &amp; marine conditions</td><td>Coordinates</td></tr>
+    <tr><td>airnowgovapi.com <small>US EPA AirNow</small></td><td>Air quality observations &amp; forecast</td><td>Coordinates</td></tr>
+    <tr><td>air-quality-api.open-meteo.com <small>Open-Meteo</small></td><td>Air quality index (where AirNow has no coverage)</td><td>Coordinates</td></tr>
+    <tr><td>itunes.apple.com <small>Apple</small></td><td>Checking whether a newer app version is available (at most once a day)</td><td>The app&rsquo;s own App Store ID &mdash; nothing about you</td></tr>
+    <tr><td>noaa-alert-relay.nelsok.workers.dev <small>ours, on Cloudflare</small></td><td>Background alert delivery</td><td>See Push Notifications above</td></tr>
+  </table>
+  <p>Requests are made only when the corresponding feature is used &mdash; tide and marine services are contacted only for coastal locations, and the alert relay only if you have enabled push notifications. Cloudflare processes relay traffic under its own privacy practices.</p>
+  <p>The app contains no advertising networks, no analytics SDKs, and no third-party tracking software of any kind.</p>
+
+  <h2>What We Do Not Collect</h2>
+  <ul>
+    <li>No account, sign-in, name, or email address.</li>
+    <li>No advertising identifiers, and no participation in Apple's App Tracking Transparency framework &mdash; the app collects no tracking data.</li>
+    <li>No advertising networks or third-party analytics SDKs.</li>
+    <li>No cookies or cross-app tracking technologies.</li>
+    <li>No location history, search history, or behavioural profile.</li>
+    <li>Nothing is sold, rented, or shared for marketing purposes. Ever.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>This app does not knowingly collect personal information from children under 13. It requires no account and collects no personal identifiers from users of any age.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the updated version will be posted with a revised effective date. Material changes affecting what is collected or how it is used will be reflected before the corresponding app update is released. The canonical version is published at <a href="https://nelsok-dev.github.io/noaa-weather-privacy/">nelsok-dev.github.io/noaa-weather-privacy</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy, or requests to delete data held by the alert relay:<br>
+  <a href="mailto:&#110;&#101;&#108;&#115;&#111;&#107;&#100;&#101;&#118;&#64;&#103;&#109;&#97;&#105;&#108;&#46;&#99;&#111;&#109;">&#110;&#101;&#108;&#115;&#111;&#107;&#100;&#101;&#118;&#64;&#103;&#109;&#97;&#105;&#108;&#46;&#99;&#111;&#109;</a></p>
+
+  <div class="footer">
+    &copy; 2026 nelsok &mdash; NOAA Weather Unofficial is not affiliated with NOAA, NWS, NASA, or any government agency.
+  </div>
+</body>
+</html>

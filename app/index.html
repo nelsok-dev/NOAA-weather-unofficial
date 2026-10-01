@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <!--
+    Content-Security-Policy — strict mode.
+
+    Neither script-src nor style-src allows 'unsafe-inline':
+    * Inline event handlers (onclick=, onerror=, etc.) → replaced by the
+      event-delegation dispatcher in app.js (data-{event}-action attributes
+      + ACTIONS registry). Per-image onerror → data-img-fb / data-img-hide
+      + a capture-phase document listener.
+    * Inline style="" attributes → replaced by content-hashed CSS classes
+      in css/inline-styles.css. Data-driven styles use data-css-* attributes
+      that an applyDynamicStyles() helper translates into CSSOM
+      `el.style.setProperty(...)` calls (CSSOM is allowed by CSP).
+
+    With both inline channels closed, an injected payload — script tag,
+    onerror attribute, or style attribute — cannot execute or take effect.
+    object-src 'none' blocks <object>/<embed>/<applet>, frame-ancestors 'none'
+    prevents clickjacking, base-uri 'self' stops injected <base> reroutes,
+    and upgrade-insecure-requests forces https on any leaked http URL.
+
+    ── connect-src IS enforced, including on the native build ──────────────
+    That is not automatic on Capacitor and it is easy to undo, so: the reason it
+    holds is that `CapacitorHttp` is set to `enabled: false` in
+    capacitor.config.json. DO NOT turn it back on without reading this.
+
+    With it enabled, Capacitor's native-bridge.js replaces window.fetch and
+    every request leaves the WebView's reach:
+      * GET/HEAD/OPTIONS/TRACE get rewritten to
+        capacitor://localhost/_capacitor_http_interceptor_/?u=<target>
+        — a SAME-ORIGIN url, which `connect-src 'self'` always permits.
+        WebViewAssetHandler.swift then swaps the url back and issues the real
+        request through URLSession.shared, outside the WebView entirely.
+      * POST/PUT/DELETE go through the `bridge` WebKit message handler, which
+        CSP never inspects at all.
+    So flipping that flag silently turns the allowlist below from a control into
+    a comment, and an injected payload regains the ability to exfiltrate to any
+    host on the internet.
+
+    Two things had to be true before it could be turned off, and both now are:
+      * Every host in the allowlist serves `Access-Control-Allow-Origin` and
+        works through an ordinary fetch — measured against all of them.
+      * The push relay answers CORS preflights. push.js posts application/json,
+        which is not a simple request, so the browser preflights /register; the
+        relay used to answer that with a bare 404 and no Access-Control-*
+        headers, which would have blocked registration outright and killed
+        background push. It now returns 204 with an explicit origin allowlist
+        (separate repo, ~/noaa-alert-relay).
+    The one endpoint that genuinely cannot do CORS — geocoding.geo.census.gov,
+    which sends no ACAO at all — asks for the native bypass explicitly, per
+    call, via the CapacitorHttp plugin API. See _censusFetchJSON() in app.js:
+    disabling the flag stops the automatic fetch/XHR patching but leaves the
+    plugin itself callable.
+
+    What stops an injection in the first place is still script-src/style-src,
+    and disciplined output escaping — esc() on every interpolation of API or
+    user data (see esc() in app.js). connect-src is the second line: it bounds
+    where a payload could send anything if it ever did execute.
+  -->
+  <!--
+    N48: On the native Capacitor shell, `cordova.js` and `cordova_plugins.js`
+    are injected at the app origin (capacitor://) so they match `'self'` in
+    `script-src` and run with full privileges. They're framework-provided
+    code we trust, but be aware they bypass the strict CSP boundary —
+    anything new pulled in by a Capacitor plugin update inherits that trust.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    base-uri 'self';
+    form-action 'none';
+    frame-ancestors 'none';
+    object-src 'none';
+    manifest-src 'self';
+    worker-src 'self';
+    font-src 'self';
+    script-src 'self';
+    style-src 'self';
+    img-src 'self' data: blob: https://api.weather.gov https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://opengeo.ncep.noaa.gov https://gibs.earthdata.nasa.gov https://nowcoast.noaa.gov;
+    connect-src 'self' https://api.weather.gov https://api.open-meteo.com https://data.rcc-acis.org https://opengeo.ncep.noaa.gov https://gibs.earthdata.nasa.gov https://mapservices.weather.noaa.gov https://nowcoast.noaa.gov https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://geocoding-api.open-meteo.com https://photon.komoot.io https://geocoding.geo.census.gov https://data.epa.gov https://airnowgovapi.com https://api.tidesandcurrents.noaa.gov https://marine-api.open-meteo.com https://air-quality-api.open-meteo.com https://noaa-alert-relay.nelsok.workers.dev https://itunes.apple.com;
+    upgrade-insecure-requests;
+  "/>
+  <!--
+    iOS WKWebView: pin the viewport scale to 1.0 so focusing an input never
+    leaves the page zoomed. Without this, some Capacitor configs leave the
+    whole WebView at a non-1.0 scale after the keyboard dismisses — visually
+    "the top blue header grew and stays larger across all tabs" because every
+    pixel is being scaled up. user-scalable=no disables pinch-zoom inside the
+    app shell; iOS's OS-level Accessibility Zoom still works for low-vision
+    users.
+  -->
+  <meta name="apple-itunes-app" content="app-id=6771460673">
+  <link rel="canonical" href="https://nelsok-dev.github.io/NOAA-weather-unofficial/app/">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
+  <meta name="theme-color" content="#002244"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="NOAA Wx"/>
+  <!-- N50: scrub the Referer on outbound requests so partner APIs don't see
+       the app's path/query string in their logs. Capacitor uses capacitor://
+       internally where this is moot, but PWA web builds benefit. -->
+  <meta name="referrer" content="no-referrer"/>
+  <meta name="description" content="Unofficial NOAA/NWS weather — live NEXRAD radar, GOES satellite, and NWS alerts for any US location."/>
+  <title>NOAA Weather Unofficial</title>
+  <link rel="manifest" href="manifest.json"/>
+  <!-- N11: iOS uses apple-touch-icon for the home-screen icon when the
+       user picks "Add to Home Screen". Without it iOS falls back to a
+       screenshot of the page. The 192×192 PNG already in icons/ is
+       above iOS's recommended 180×180 — iOS scales down cleanly. -->
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <!-- N66: Leaflet 1.9.4 bundled locally under vendor/leaflet/. Removes
+       the cold-start dependency on unpkg.com (occasional outages would
+       break the map). SRI hashes still verify byte-for-byte against the
+       upstream files in case the local copy is ever swapped. -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css"
+        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+        crossorigin="anonymous"/>
+  <link rel="stylesheet" href="css/styles.css?v=284"/>
+  <link rel="stylesheet" href="css/inline-styles.css?v=284"/>
+</head>
+<body>
+<div class="phone" id="app">
+
+  <!-- In-app toast notification.
+       N16: role="alert" + aria-live="assertive" so screen readers interrupt
+       and announce new wind/tornado warnings the moment they appear. -->
+  <div id="toast" role="alert" aria-live="assertive" aria-atomic="true" data-click-action="dismissToast">
+    <!-- No src attribute until a toast provides an icon — src="" makes some
+         browsers issue a spurious request for the page URL itself. -->
+    <img class="t-img" id="t-img" data-img-fb/>
+    <span class="t-fb _s-6b99de" id="t-fb">⚠️</span>
+    <div class="t-body">
+      <div class="t-app">NOAA Weather Unofficial &middot; National Weather Service</div>
+      <div class="t-title" id="t-title">Wind Advisory</div>
+      <div class="t-msg" id="t-msg">Gusts to 45 mph through 11 PM</div>
+    </div>
+    <button class="t-close" aria-label="Dismiss notification" data-click-action="dismissToast">&#x2715;</button>
+  </div>
+
+  <!-- ── Screen: Weather ──────────────────────────────────────────────────── -->
+  <div class="screen active" id="s-wx">
+    <div class="sky-bg" id="skyBg"></div>
+    <div class="hz">
+      <div class="noaa-hdr">
+        <div class="noaa-hdr-inner _s-13ad09">
+          <img class="_s-95a5ef" src="icons/HeaderIcon@2x.png" srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x" width="30" height="30" alt=""/>
+          <span class="_s-c90b98">NOAA Weather Unofficial</span>
+          <div class="_s-d96e9f">
+            <!-- Tapping the location name opens the Locations screen (item 12).
+                 Zone code removed from display — stored in activeLocation.zone
+                 for API calls, but not shown to end users (item 11). The
+                 hdr-loc-btn::after CSS rule adds a "›" chevron affordance. -->
+            <button class="_s-e35ffc hdr-loc-btn" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location">
+              <div class="_s-2cbcc1" id="hdr-loc-name"></div>
+              <div class="_s-ea02e8" id="hdr-loc-zone"></div>
+            </button>
+            <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="status-strip">
+        <div class="ss-txt" id="hdr-strip-txt" data-click-action="refreshFromStrip">NATIONAL WEATHER SERVICE</div>
+        <div class="live-chip"><span class="live-dot"></span>LIVE</div>
+      </div>
+      <div class="global-search-row" data-gsr-placeholder></div>
+      <div id="wx-body">
+        <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Fetching from api.weather.gov&hellip;</div></div>
+      </div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+  <!-- ── Screen: Map ──────────────────────────────────────────────────────── -->
+  <div class="screen _s-3ecd54" id="s-map">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <img class="_s-95a5ef" src="icons/HeaderIcon@2x.png" srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x" width="30" height="30" alt=""/>
+        <span class="_s-c90b98" id="map-hdr-title">Radar, Satellite &amp; Lightning</span>
+        <div class="_s-ff2ab4">
+          <button class="_s-20a43a" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">NWS RADAR &middot; RIDGE2</div>
+      <div class="live-chip"><span class="live-dot"></span>LIVE</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="map-pull" id="map-pull"><span class="map-pull-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></span><span class="map-pull-txt">Pull to refresh</span></div>
+    <!-- Phase 3 (iPad): on wide landscape #map-split becomes a two-pane
+         master-detail (map + forecast pane). On phones/portrait it is
+         display:contents, so #map-wrap stays the screen's flex child exactly as
+         before and the iPhone map screen is structurally unchanged. -->
+    <div id="map-split">
+    <div id="map-wrap">
+      <div id="lmap"></div>
+
+      <!-- Base-layer switch — floats top-center over the map so switching radar
+           ↔ satellite never requires expanding the deck. -->
+      <div class="map-base-seg" id="map-base-seg">
+        <button class="lbtn on" id="lb-radar" data-click-action="setBase" data-mode="radar">Radar</button>
+        <button class="lbtn" id="lb-sat" data-click-action="setBase" data-mode="satellite">Satellite</button>
+        <button class="lbtn" id="lb-lt" data-click-action="setBase" data-mode="lightning">Lightning</button>
+      </div>
+
+      <button class="map-fs-btn" id="map-fs-btn" data-click-action="toggleMapFullscreen" aria-label="Toggle map fullscreen" title="Hide / show controls">⤢</button>
+      <button class="map-fs-btn map-refresh-btn" id="map-refresh-btn" data-click-action="refreshMapBtn" aria-label="Refresh map" title="Refresh">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      </button>
+
+      <!-- Two-tier control deck. Tier 1 (.map-deck-primary) stays visible above
+           the map edge; pulling the deck up or tapping "Tools" expands tier 2
+           (.map-sheet-body), and pulling it down or tapping "Close" folds it. -->
+      <div class="map-controls" id="map-controls">
+        <!-- Drag handle — visible at all times as the pull-up affordance -->
+        <div class="map-sheet-grip" aria-hidden="true"></div>
+
+        <!-- ── Tier 1 — always-visible essentials ─────────────────────────── -->
+        <div class="map-deck-primary">
+          <div class="prod-row" id="prod-row">
+            <button class="prbtn on" data-click-action="setProd" data-prod="bref">Radar</button>
+            <button class="prbtn" data-click-action="setProd" data-prod="cref">Storm Layer</button>
+            <button class="prbtn" data-click-action="setProd" data-prod="etop">Storm Tops</button>
+            <button class="prbtn" data-click-action="setProd" data-prod="ptyp">Precip Type</button>
+          </div>
+          <div class="prod-row _s-6b99de" id="sat-prod-row">
+            <button class="prbtn sat-prbtn on" data-click-action="setSatProd" data-prod="geocolor">GeoColor</button>
+            <button class="prbtn sat-prbtn" data-click-action="setSatProd" data-prod="ir">Infrared</button>
+            <button class="prbtn sat-prbtn" data-click-action="setSatProd" data-prod="visible">Visible</button>
+            <button class="prbtn sat-prbtn" data-click-action="setSatProd" data-prod="airmass">Air Mass</button>
+            <button class="prbtn sat-prbtn" data-click-action="setSatProd" data-prod="dust">Dust</button>
+            <button class="prbtn sat-prbtn" data-click-action="setSatProd" data-prod="fire">Fire</button>
+          </div>
+          <!-- Describes the selected product, so it stays with the chips. It
+               shows when the deck is open (see .deck-mini in styles.css). -->
+          <div class="map-prod-hint" id="map-prod-hint"></div>
+          <!-- Top row: how the loop plays — speed, then how much of it there is.
+               Reload sits at the end, away from the transport controls so it
+               cannot be hit while reaching for play. -->
+          <div class="radar-anim _s-6b99de" id="radar-anim">
+            <div class="ranim-speeds" id="ranim-speeds">
+              <button class="rspd" data-click-action="setAnimSpeed" data-speed="1200">½×</button>
+              <button class="rspd active" data-click-action="setAnimSpeed" data-speed="600">1×</button>
+              <button class="rspd" data-click-action="setAnimSpeed" data-speed="300">2×</button>
+              <button class="rspd" data-click-action="setAnimSpeed" data-speed="150">4×</button>
+            </div>
+            <!-- Loop length shares this row with the speeds: both answer "how
+                 does the animation play". The divider keeps them legible as two
+                 groups, and the aria-labels carry what the dropped "Loop length"
+                 caption used to say. -->
+            <span class="ranim-div" aria-hidden="true"></span>
+            <div class="loop-len-btns" id="loop-len-row">
+              <button class="llbtn active" data-click-action="setLoopLen" data-len="1"
+                      aria-label="Loop length 1 hour" title="Loop length 1 hour">1 hr</button>
+              <button class="llbtn" data-click-action="setLoopLen" data-len="2"
+                      aria-label="Loop length 2 hours" title="Loop length 2 hours">2 hr</button>
+              <button class="llbtn" data-click-action="setLoopLen" data-len="3"
+                      aria-label="Loop length 3 hours" title="Loop length 3 hours">3 hr</button>
+            </div>
+            <span class="ranim-div" aria-hidden="true"></span>
+            <button class="ranim-reload" data-click-action="reloadFrames"
+                    aria-label="Reload radar frames" title="Reload radar frames"><span
+                    class="ranim-reload-ico" aria-hidden="true">&#8635;</span>Refresh</button>
+          </div>
+          <!-- Scrub slider — drag to any frame in the loop. `input` scrubs live
+               (coalesced to one map update per animation frame), `change` lands
+               the final position. -->
+          <!-- Transport sits with the bar it drives, the way every media player
+               puts play at the left of the progress bar. -->
+          <div class="ranim-scrub-row">
+            <button class="ranim-btn" id="radar-prev" data-click-action="stepFrame" data-dir="-1"
+                    aria-label="Previous frame" title="Previous frame">&#124;&#9664;</button>
+            <button class="ranim-btn ranim-play" id="radar-play-btn" data-click-action="toggleRadarPlay"
+                    aria-label="Play or pause the loop" title="Play / pause">&#9646;&#9646;</button>
+            <button class="ranim-btn" id="radar-next" data-click-action="stepFrame" data-dir="1"
+                    aria-label="Next frame" title="Next frame">&#9654;&#124;</button>
+            <input class="ranim-slider" id="radar-slider" type="range"
+                   min="0" max="0" value="0" step="1"
+                   data-input-action="scrubFrame" data-change-action="scrubFrameEnd"
+                   data-touchend-action="scrubFrameEnd" data-touchcancel-action="scrubFrameEnd"
+                   aria-label="Radar frame position"/>
+            <span class="ranim-time" id="radar-time">--:--</span>
+          </div>
+          <div class="deck-quick-row">
+            <button class="deck-more-btn" data-click-action="toggleMapSheet"
+                    aria-expanded="false" aria-controls="map-sheet-body"
+                    aria-label="Show map tools">
+              <span class="deck-more-txt">Tools</span>
+              <span class="deck-more-chev">&#9650;</span>
+            </button>
+          </div>
+        </div><!-- /.map-deck-primary -->
+
+        <!-- ── Tier 2 — fine-tuning, revealed on expand ───────────────────── -->
+        <div class="map-sheet-body" id="map-sheet-body">
+          <!-- The colour scale opens with the rest of the tools, BELOW the Close
+               button. It used to sit in tier 1 above it, hidden only while
+               condensed, so opening the deck pushed it in above the button the
+               user had just pressed. -->
+          <div class="lgnd-row" id="lgnd-row">
+            <span class="lgnd-lbl" id="lgnd-lo">Light</span>
+            <div class="lgnd-bar _s-330aaf" id="lgnd-bar"></div>
+            <span class="lgnd-lbl" id="lgnd-hi">Heavy</span>
+          </div>
+          <div class="overlay-row">
+            <div class="_s-79d1c8">⚠️ Alerts &amp; warnings overlay</div>
+            <div class="_s-015a5e">
+              <span class="_s-e4757f" id="map-tog-lbl">On</span>
+              <label class="ios-tog orange">
+                <input type="checkbox" id="map-alerts-tog" data-change-action="toggleMapAlerts" checked/>
+                <div class="tog-track"></div>
+                <div class="tog-thumb"></div>
+              </label>
+            </div>
+          </div>
+          <!-- NHC hurricanes and tropical storms: cones, tracks, coastal
+               watches/warnings and 7-day outlook areas (js/tropical.js). -->
+          <div class="overlay-row">
+            <div class="_s-79d1c8">🌀 Hurricanes &amp; tropical storms</div>
+            <div class="_s-015a5e">
+              <span class="_s-e4757f" id="map-trop-lbl">On</span>
+              <label class="ios-tog orange">
+                <input type="checkbox" id="map-trop-tog" data-change-action="toggleMapTropical" checked/>
+                <div class="tog-track"></div>
+                <div class="tog-thumb"></div>
+              </label>
+            </div>
+          </div>
+          <!-- WPC Winter Storm Severity Index, Days 1–3 (js/winter.js). Empty
+               — and so invisible — outside winter. -->
+          <div class="overlay-row">
+            <div class="_s-79d1c8">❄️ Winter storm severity</div>
+            <div class="_s-015a5e">
+              <span class="_s-e4757f" id="map-wtr-lbl">On</span>
+              <label class="ios-tog orange">
+                <input type="checkbox" id="map-wtr-tog" data-change-action="toggleMapWinter" checked/>
+                <div class="tog-track"></div>
+                <div class="tog-thumb"></div>
+              </label>
+            </div>
+          </div>
+          <!-- Opacity pair — radar/sat and alert opacity kept side by side -->
+          <div class="op-row">
+            <label>Radar / Sat opacity</label>
+            <input type="range" min="10" max="100" step="5" value="100" data-input-action="setOp"/>
+            <span id="opVal">100%</span>
+          </div>
+          <div class="op-row" id="alert-op-row">
+            <label>Alert opacity</label>
+            <input type="range" id="alert-op-slider" min="10" max="100" step="5" value="100" data-input-action="setAlertOp"/>
+            <span id="alertOpVal">100%</span>
+          </div>
+          <div class="alert-tier-row" id="alert-tier-row">
+            <button class="atbtn on" id="at-warning" data-click-action="toggleAlertTier" data-tier="warning">Warnings</button>
+            <button class="atbtn on" id="at-watch" data-click-action="toggleAlertTier" data-tier="watch">Watches</button>
+            <button class="atbtn on" id="at-advisory" data-click-action="toggleAlertTier" data-tier="advisory">Advisories</button>
+          </div>
+          <div class="al-lgnd _s-75816c" id="map-al-lgnd"></div>
+          <div class="map-src" id="map-src">Radar: NOAA/NWS RIDGE2 &middot; api.weather.gov &middot; OSM</div>
+        </div><!-- /.map-sheet-body -->
+      </div><!-- /#map-controls -->
+    </div><!-- /#map-wrap -->
+    <aside id="map-detail-pane" aria-hidden="true"></aside>
+    </div><!-- /#map-split -->
+    <div class="bnav"></div>
+  </div>
+
+  <!-- ── Screen: Alerts & Notifications ─────────────────────────────────── -->
+  <div class="screen" id="s-alerts">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <img class="_s-95a5ef" src="icons/HeaderIcon@2x.png" srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x" width="30" height="30" alt=""/>
+        <span class="_s-c90b98">NWS Alerts</span>
+        <div class="_s-d96e9f">
+          <button class="_s-fa9433" data-click-action="clearAllNotifs">Clear</button>
+          <div class="live-chip"><span class="live-dot"></span>LIVE</div>
+          <button class="_s-20a43a" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <!-- Populated by renderAlerts() from the active location. Left blank in
+           static markup so a wrong hardcoded place never flashes (item #16). -->
+      <div class="ss-txt" id="alerts-sub"></div>
+      <span class="_s-34d103">api.weather.gov</span>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller">
+      <div id="alerts-body"><div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div>Loading NWS alerts&hellip;</div></div></div>
+      <div class="status-strip _s-7556c1">
+        <div class="ss-txt" id="notif-count-strip">RECENT ALERTS</div>
+      </div>
+      <div id="notif-list"></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- ── Screen: Settings (4th tab) ──────────────────────────────────────── -->
+  <div class="screen" id="s-settings">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <img class="_s-95a5ef" src="icons/HeaderIcon@2x.png" srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x" width="30" height="30" alt=""/>
+        <span class="_s-c90b98">Settings</span>
+      </div>
+    </div>
+    <!-- Populated by updateLocationHeader() from the active location. Left blank
+         in static markup so a wrong hardcoded place never flashes (item #16). -->
+    <div class="status-strip"><div class="ss-txt" id="settings-loc-strip"></div></div>
+    <div class="scroller">
+      <div class="_s-8bc695" id="perm-wrap"></div>
+      <div class="_s-5660e3">
+        <div class="sec-lbl">PUSH NOTIFICATIONS</div>
+        <div class="grp">
+          <div class="srow">
+            <div class="srow-ico _s-b13f02"><svg width="18" height="18" aria-hidden="true"><use href="#si-bell"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Enable alerts</div><div class="srow-sub">Watches, warnings &amp; advisories · background push</div></div>
+            <div class="srow-r"><label class="ios-tog"><input type="checkbox" id="master-tog" data-change-action="onMasterChange" checked/><div class="tog-track"></div><div class="tog-thumb"></div></label></div>
+          </div>
+          <div class="srow">
+            <div class="srow-ico _s-7f0719"><svg width="18" height="18" aria-hidden="true"><use href="#si-refresh"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Check interval</div><div class="srow-sub">In-app refresh · background push always active</div></div>
+            <div class="srow-r">
+              <select class="tsel" id="poll-sel" data-change-action="setPoll">
+                <option value="5">5 min</option>
+                <option value="10" selected>10 min</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="_s-5660e3">
+        <div class="sec-lbl">MINIMUM SEVERITY</div>
+        <div class="_s-594705">
+          <div class="_s-15a1a1">
+            <div class="_s-946c55">Applies to other NWS alerts. Watches, warnings, advisories and statements always notify.</div>
+            <div class="sev-row" id="sev-chips">
+              <button class="sev-chip extreme" data-click-action="setSev" data-sev="Extreme">Extreme</button>
+              <button class="sev-chip severe" data-click-action="setSev" data-sev="Severe">Severe</button>
+              <button class="sev-chip moderate sel" data-click-action="setSev" data-sev="Moderate">Moderate ✓</button>
+              <button class="sev-chip minor" data-click-action="setSev" data-sev="Minor">Minor</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="_s-5660e3">
+        <div class="sec-lbl">UNITS</div>
+        <div class="_s-594705">
+          <div class="_s-2b34a2">
+            <div class="unit-row">
+              <span class="unit-lbl">🌡 Temperature</span>
+              <div class="unit-chips">
+                <button class="uchip sel" id="uchip-F" data-click-action="setUnit" data-unit-type="temp" data-unit-val="F">°F</button>
+                <button class="uchip" id="uchip-C" data-click-action="setUnit" data-unit-type="temp" data-unit-val="C">°C</button>
+              </div>
+            </div>
+            <div class="unit-row">
+              <span class="unit-lbl">💨 Wind speed</span>
+              <div class="unit-chips">
+                <button class="uchip sel" id="uchip-mph" data-click-action="setUnit" data-unit-type="wind" data-unit-val="mph">mph</button>
+                <button class="uchip" id="uchip-kmh" data-click-action="setUnit" data-unit-type="wind" data-unit-val="kmh">km/h</button>
+              </div>
+            </div>
+            <div class="unit-row">
+              <span class="unit-lbl">👁 Visibility</span>
+              <div class="unit-chips">
+                <button class="uchip sel" id="uchip-mi" data-click-action="setUnit" data-unit-type="vis" data-unit-val="mi">mi</button>
+                <button class="uchip" id="uchip-km" data-click-action="setUnit" data-unit-type="vis" data-unit-val="km">km</button>
+              </div>
+            </div>
+            <div class="unit-row">
+              <span class="unit-lbl">❄️ Snow level alert</span>
+              <div class="unit-chips">
+                <select class="tsel" id="snow-level-offset-sel" data-change-action="setSnowLevelOffset">
+                  <option value="500">+500 ft</option>
+                  <option value="1000">+1,000 ft</option>
+                  <option value="1500">+1,500 ft</option>
+                  <option value="2000" selected>+2,000 ft</option>
+                  <option value="2500">+2,500 ft</option>
+                  <option value="3000">+3,000 ft</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="_s-5660e3">
+        <div class="sec-lbl">QUIET HOURS</div>
+        <div class="grp">
+          <div class="srow">
+            <div class="srow-ico _s-5985a4"><svg width="18" height="18" aria-hidden="true"><use href="#si-moon"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Enable quiet hours</div><div class="srow-sub">Mute non-critical alerts</div></div>
+            <div class="srow-r"><label class="ios-tog blue"><input type="checkbox" id="quiet-tog" data-change-action="onQuietChange"/><div class="tog-track"></div><div class="tog-thumb"></div></label></div>
+          </div>
+          <div class="srow _s-06a6aa" id="quiet-time-row">
+            <div class="srow-ico _s-ec9128"><svg width="18" height="18" aria-hidden="true"><use href="#si-clock"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Quiet period</div><div class="srow-sub" id="quiet-sub">10:00 PM &ndash; 7:00 AM</div></div>
+            <div class="srow-r _s-e51ab5">
+              <select class="tsel" id="q-from" data-change-action="onQuietChange">
+                <option value="18">6 PM</option>
+                <option value="19">7 PM</option>
+                <option value="20">8 PM</option>
+                <option value="21">9 PM</option>
+                <option value="22" selected>10 PM</option>
+                <option value="23">11 PM</option>
+                <option value="0">Midnight</option>
+                <option value="1">1 AM</option>
+                <option value="2">2 AM</option>
+                <option value="3">3 AM</option>
+                <option value="4">4 AM</option>
+                <option value="5">5 AM</option>
+                <option value="6">6 AM</option>
+              </select>
+              <span class="_s-95ec7e">&ndash;</span>
+              <select class="tsel" id="q-to" data-change-action="onQuietChange">
+                <option value="4">4 AM</option>
+                <option value="5">5 AM</option>
+                <option value="6">6 AM</option>
+                <option value="7" selected>7 AM</option>
+                <option value="8">8 AM</option>
+                <option value="9">9 AM</option>
+                <option value="10">10 AM</option>
+                <option value="11">11 AM</option>
+                <option value="12">Noon</option>
+                <option value="13">1 PM</option>
+                <option value="14">2 PM</option>
+                <option value="15">3 PM</option>
+                <option value="16">4 PM</option>
+                <option value="17">5 PM</option>
+              </select>
+            </div>
+          </div>
+          <div class="srow">
+            <div class="srow-ico _s-b13f02"><svg width="18" height="18" aria-hidden="true"><use href="#si-alert"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Override for Warnings</div><div class="srow-sub">Always notify for warnings &amp; extreme events</div></div>
+            <!-- onQuietChange (not the bare saveSettings) because this toggle is
+                 part of the quiet-hours state the relay enforces: changing it has
+                 to re-sync, or the override only applies to in-app toasts. -->
+            <div class="srow-r"><label class="ios-tog"><input type="checkbox" id="override-tog" data-change-action="onQuietChange" checked/><div class="tog-track"></div><div class="tog-thumb"></div></label></div>
+          </div>
+        </div>
+      </div>
+      <!-- How the push relay decides when to notify (noaa-alert-relay src/vtec.ts):
+           once per event, again only on escalation or a warning/watch extension.
+           Keep in step with the relay — this is the user-facing half of that logic. -->
+      <div class="_s-5660e3">
+        <div class="sec-lbl">HOW ALERTS ARE SENT</div>
+        <div class="_s-594705">
+          <div class="_s-15a1a1">
+            <ul class="how-alerts">
+              <li>You get one notification when the NWS issues an alert for your area.</li>
+              <li>The NWS reissues active alerts every few hours. A reissue with no changes won&rsquo;t notify you again.</li>
+              <li>You&rsquo;ll be notified again if a warning becomes more dangerous (a tornado is observed, the damage threat goes up, or it becomes an emergency), or if a warning or watch is extended.</li>
+              <li>Advisories and statements don&rsquo;t notify again when they&rsquo;re extended. The Alerts tab always shows the latest version.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="_s-5660e3">
+        <div class="sec-lbl">DAY AHEAD</div>
+        <div class="grp">
+          <div class="srow">
+            <div class="srow-ico _s-d96580"><svg width="18" height="18" aria-hidden="true"><use href="#si-sun"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Day ahead</div><div class="srow-sub">Daily forecast summary notification</div></div>
+            <div class="srow-r"><label class="ios-tog blue"><input type="checkbox" id="briefing-tog" data-change-action="onBriefingChange" checked/><div class="tog-track"></div><div class="tog-thumb"></div></label></div>
+          </div>
+          <div class="srow _s-06a6aa" id="briefing-time-row">
+            <div class="srow-ico _s-43bc5d"><svg width="18" height="18" aria-hidden="true"><use href="#si-clock"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Delivery time</div><div class="srow-sub" id="briefing-time-sub">7:00 AM</div></div>
+            <div class="srow-r">
+              <select class="tsel" id="briefing-time" data-change-action="onBriefingChange">
+                <option value="4">4 AM</option>
+                <option value="5">5 AM</option>
+                <option value="6">6 AM</option>
+                <option value="7" selected>7 AM</option>
+                <option value="8">8 AM</option>
+                <option value="9">9 AM</option>
+                <option value="10">10 AM</option>
+                <option value="11">11 AM</option>
+                <option value="12">Noon</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Developer section: collapsed by default so it doesn't distract
+           regular users. Tap the label to reveal the test buttons. -->
+      <div class="_s-5660e3">
+        <details class="dev-details">
+          <summary class="dev-summary">🔧 Developer</summary>
+          <div class="dev-body">
+            <button class="test-btn" data-click-action="fireTestNotif">🧪 Send test NWS notification</button>
+            <button class="test-btn _s-8a77e5" data-click-action="fireBriefingNotif">☀️ Send test Day Ahead</button>
+          </div>
+        </details>
+      </div>
+      <!-- ── Home Screen Widget ────────────────────────────────────────────── -->
+      <div class="_s-5660e3">
+        <div class="sec-lbl">HOME SCREEN</div>
+        <div class="grp">
+          <div class="srow">
+            <div class="srow-ico _s-d96580"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+            <div class="srow-txt"><div class="srow-title">Add Weather Widget</div><div class="srow-sub">Long-press home screen → + → search "NOAA Weather Unofficial"</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- ── About & Legal Credits ───────────────────────────────────────── -->
+      <div class="_s-5660e3">
+        <div class="sec-lbl">ABOUT &amp; LEGAL</div>
+        <div class="_s-062acc">
+
+          <!-- Version & copyright -->
+          <div class="_s-13313b">
+            <div>
+              <div class="_s-6c5731">NOAA Weather Unofficial</div>
+              <!-- Fallback only — boot() overwrites this from APP_VERSION.
+                   Kept in sync by scripts/release-sync.mjs set-version. -->
+              <div class="_s-67abea" id="app-version">Version 1.21.0 &middot; &copy; 2025&ndash;2026 nelsok</div>
+            </div>
+            <div class="_s-ab12cd">
+              <button class="_s-0e382a" data-click-action="openPrivacy">Privacy Policy</button>
+              <button class="_s-0e382a" data-click-action="reportBug">Report a Bug / Contact</button>
+            </div>
+          </div>
+
+          <!-- Data Sources first — lead with credibility -->
+          <div class="_s-d20372">
+            <div class="_s-47bab0">Data Sources</div>
+            <div>🌐 <strong>NWS / NOAA</strong> — api.weather.gov &middot; Public domain</div>
+            <div>📡 <strong>NOAA RIDGE2</strong> — NEXRAD radar &middot; opengeo.ncep.noaa.gov</div>
+            <div>🛰 <strong>NASA GIBS</strong> — GOES-East satellite &middot; gibs.earthdata.nasa.gov</div>
+            <div>🗺 <strong>OpenStreetMap</strong> — Map tiles &amp; geocoding &middot; &copy; contributors (ODbL)</div>
+            <div>📍 <strong>Photon</strong> — Address &amp; place search &middot; photon.komoot.io (OSM)</div>
+            <div>🌊 <strong>NOAA CO-OPS</strong> — Tide predictions &middot; tidesandcurrents.noaa.gov</div>
+            <div>📊 <strong>ACIS / Regional Climate Centers</strong> — Daily climate history for rainfall streaks (data.rcc-acis.org)</div>
+            <div>〰️ <strong>Open-Meteo</strong> — Location search (GeoNames, CC-BY 4.0), marine (NOAA WaveWatch III), modeled air quality &amp; the long-range outlook (GFS, days 8–14; temperatures converted to your selected unit)</div>
+            <div>☀️ <strong>EPA</strong> — UV index &middot; data.epa.gov</div>
+            <div>🍃 <strong>EPA AirNow</strong> — Air quality &middot; with NOAA, NPS &amp; state/local agencies</div>
+            <div>📮 <strong>US Census</strong> — ZIP geocoding &middot; geocoding.geo.census.gov</div>
+            <div>🔔 <strong>Alert relay</strong> — Background push &middot; noaa-alert-relay (Cloudflare Worker)</div>
+            <div>🍃 <strong>Leaflet</strong> v1.9.4 &middot; &copy; Vladimir Agafonkin &middot; BSD 2-Clause</div>
+          </div>
+
+          <!-- Disclaimer below sources — legal note, not opening alarm -->
+          <div class="_s-e8f016">
+            <div class="_s-198def">⚠️ UNOFFICIAL · NOT AFFILIATED WITH NOAA OR NWS</div>
+            <div class="_s-fa5940">Independent third-party app. Not created, endorsed, or sponsored by NOAA, the National Weather Service, or any U.S. government agency. Data provided "as-is" without warranty and may be delayed or unavailable. For life-threatening weather, always confirm at weather.gov or with local officials before acting.</div>
+          </div>
+
+          <div class="_s-2a2659">
+            NWS icons &copy; National Weather Service &middot; Map data &copy; OpenStreetMap contributors, available under the Open Database License (ODbL). OpenStreetMap&reg; is a trademark of the OpenStreetMap Foundation.
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+  <!-- ── Screen: Locations ─────────────────────────────────────────────────── -->
+  <div class="screen" id="s-loc">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <img class="_s-95a5ef" src="icons/HeaderIcon@2x.png" srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x" width="30" height="30" alt=""/>
+        <span class="_s-c90b98">Saved Locations</span>
+        <button class="_s-dbbfad" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+      </div>
+    </div>
+    <div class="status-strip"><div class="ss-txt">SAVED LOCATIONS</div></div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller">
+      <div id="loc-list"></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- ── Screen: Hourly ──────────────────────────────────────────────────────── -->
+  <div class="screen" id="s-hourly">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <button class="hdr-back-btn" data-click-action="goNav" data-screen="s-wx" aria-label="Back to Weather">‹ Weather</button>
+        <div class="_s-d96e9f">
+          <button class="_s-20ce63 hdr-loc-btn" id="hourly-loc-name" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location"></button>
+          <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">NEXT 24 HOURS &middot; api.weather.gov</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller" id="hourly-body">
+      <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading hourly forecast&hellip;</div></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+  <!-- ── Screen: Extended Forecast ────────────────────────────────────────── -->
+  <div class="screen" id="s-forecast">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <button class="hdr-back-btn" data-click-action="goNav" data-screen="s-wx" aria-label="Back to Weather">‹ Weather</button>
+        <div class="_s-d96e9f">
+          <button class="_s-20ce63 hdr-loc-btn" id="forecast-ext-loc-name" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location"></button>
+          <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">7-DAY FORECAST &middot; CONDITIONS &middot; MARINE</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <!-- Details screen stacks three sections: the 7-day extended forecast, then
+         Detailed Conditions (sun/moon, hourly, gusts, cloud, snow, precip —
+         shown everywhere), then Marine &amp; Tides (coastal locations only).
+         Conditions used to live inside the Marine section, which meant the
+         tide-station proximity check hid all of it from inland users. -->
+    <div class="scroller">
+      <div id="forecast-ext-body">
+        <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading forecast&hellip;</div></div>
+      </div>
+      <div id="conditions-body">
+        <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading conditions&hellip;</div></div>
+      </div>
+      <div id="marine-body">
+        <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading marine conditions&hellip;</div></div>
+      </div>
+      <!-- Source footer sits last so the Marine section renders above it. -->
+      <div class="_s-252340" id="details-source"></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- ── Screen: Air Quality ─────────────────────────────────────────────── -->
+  <!-- Opened from the AIR QUAL. tile on the Weather screen. Body is rendered by
+       renderAirQuality() from the EPA AirNow reporting-area feed. -->
+  <div class="screen" id="s-air">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <button class="hdr-back-btn" data-click-action="goNav" data-screen="s-wx" aria-label="Back to Weather">&lsaquo; Weather</button>
+        <div class="_s-d96e9f">
+          <button class="_s-20ce63 hdr-loc-btn" id="air-loc-name" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location"></button>
+          <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">AIR QUALITY &middot; EPA AIRNOW</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller" id="air-body">
+      <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading air quality&hellip;</div></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- ── Screen: UV Index ────────────────────────────────────────────────── -->
+  <!-- Opened from the UV INDEX tile on the Weather screen. Body is rendered by
+       renderUVIndex() from the EPA Envirofacts hourly UV series. -->
+  <div class="screen" id="s-uv">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <button class="hdr-back-btn" data-click-action="goNav" data-screen="s-wx" aria-label="Back to Weather">&lsaquo; Weather</button>
+        <div class="_s-d96e9f">
+          <button class="_s-20ce63 hdr-loc-btn" id="uv-loc-name" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location"></button>
+          <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">UV INDEX &middot; EPA ENVIROFACTS</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller" id="uv-body">
+      <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading UV index&hellip;</div></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- ── Screen: Storm Center ───────────────────────────────────────────────── -->
+  <!-- Opened from the STORM CENTER card on the Weather screen. Body is rendered
+       by renderStormCenter() in js/spc.js: SPC convective outlooks, SPC
+       mesoscale discussions, and the raw NWS text products for this WFO. -->
+  <div class="screen" id="s-spc">
+    <div class="noaa-hdr">
+      <div class="noaa-hdr-inner _s-13ad09">
+        <button class="hdr-back-btn" data-click-action="goNav" data-screen="s-wx" aria-label="Back to Weather">&lsaquo; Weather</button>
+        <div class="_s-d96e9f">
+          <button class="_s-20ce63 hdr-loc-btn" id="spc-loc-name" data-click-action="goNav" data-screen="s-loc" aria-label="Switch location"></button>
+          <button class="_s-aee0e4" data-click-action="openSettings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#bnav-s-settings"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="status-strip">
+      <div class="ss-txt">STORM CENTER &middot; SPC &amp; NWS TEXT PRODUCTS</div>
+      <div class="live-chip"><span class="live-dot"></span>LIVE</div>
+    </div>
+    <div class="global-search-row" data-gsr-placeholder></div>
+    <div class="scroller" id="spc-body">
+      <div class="ldg" role="status" aria-live="polite"><div class="spin"></div><div class="_s-5e0faa">Loading Storm Center&hellip;</div></div>
+    </div>
+    <div class="bnav"></div>
+  </div>
+
+
+  <!-- Update-available pop-up (see _renderUpdatePopup in app.js). Sits over
+       the top of the Weather screen, under the alert toast (z-index), so a
+       warning arriving while it is up still shows above it. Tapping the dimmed
+       area is the same as "Not now". -->
+  <div id="upd-pop" class="upd-pop" role="dialog" aria-modal="true" aria-labelledby="upd-pop-title" aria-hidden="true">
+    <div class="upd-pop-scrim" data-click-action="dismissUpdate"></div>
+    <div class="upd-pop-card" id="upd-pop-card"></div>
+  </div>
+
+  <!-- ── First-run onboarding overlay ──────────────────────────────────────── -->
+  <!-- Hidden until boot() detects a new install (_isFirstRun). The overlay sits
+       above everything (z-index 1000) so the user must complete or skip before
+       reaching the main app.
+       CSP note: no inline style="" attrs — initial visibility is controlled by
+       the .ob-overlay/.ob-active CSS classes; dynamic state uses CSSOM from JS. -->
+  <div id="onboarding-overlay" class="ob-overlay" role="dialog" aria-modal="true" aria-label="Welcome — set your location">
+
+    <!-- Step 1: pick a location ──────────────────────────────────────────── -->
+    <div id="ob-step1">
+      <div class="ob-top">
+        <img class="ob-app-icon" src="icons/HeaderIcon@2x.png"
+             srcset="icons/HeaderIcon@2x.png 2x, icons/HeaderIcon@3x.png 3x"
+             width="72" height="72" alt="NOAA Weather Unofficial"/>
+        <div class="ob-title">NOAA Weather Unofficial</div>
+        <div class="ob-sub">Live NEXRAD radar, NWS alerts &amp; forecasts for any US location.</div>
+      </div>
+      <div class="ob-body">
+        <!-- Primary CTA — GPS. JS adds .pulse after a short delay so the ring
+             animation fires once the overlay has finished fading in. -->
+        <button class="ob-gps-btn" id="ob-gps-btn" data-click-action="obUseGPS">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>
+            <circle cx="12" cy="12" r="8"/>
+            <line x1="12" y1="2"  x2="12" y2="4"/>
+            <line x1="12" y1="20" x2="12" y2="22"/>
+            <line x1="2"  y1="12" x2="4"  y2="12"/>
+            <line x1="20" y1="12" x2="22" y2="12"/>
+          </svg>
+          Use My Location
+        </button>
+        <div class="ob-divider"><span>or search</span></div>
+        <!-- Secondary: city / ZIP search.  Results rendered by _runGsrSearch()
+             with itemAction="obSelectObResult" so they route through onboarding. -->
+        <div class="ob-search-row" id="ob-search-row">
+          <input class="ob-search-input" id="ob-search-input"
+                 type="search" inputmode="search" autocomplete="off"
+                 placeholder="City, State or ZIP…"
+                 aria-label="Search city, state, or ZIP"
+                 data-input-action="obSearch"
+                 data-keydown-action="obSearchKey"/>
+          <div class="ob-search-drop" id="ob-search-drop"
+               role="listbox" aria-label="Search suggestions"></div>
+        </div>
+        <!-- obSkip() loads the built-in default location — label says so plainly
+             (#18) so skipping reads as the lesser path, not an equal option. -->
+        <button class="ob-skip" data-click-action="obSkip">Skip and use a sample city</button>
+      </div>
+      <div class="ob-dots">
+        <span class="ob-dot ob-dot-active"></span>
+        <span class="ob-dot"></span>
+        <span class="ob-dot"></span>
+      </div>
+    </div>
+
+    <!-- Step 2: enable notifications ────────────────────────────────────── -->
+    <div id="ob-step2">
+      <div class="ob-top">
+        <div class="ob-notif-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#si-bell"/></svg></div>
+        <!-- #17: filled by _obPersonalize() with the user's just-fetched real
+             conditions, so they see concrete value before the permission ask. -->
+        <div class="ob-cond-chip" id="ob-step2-cond" hidden></div>
+        <div class="ob-title">Severe weather alerts</div>
+        <div class="ob-sub" id="ob-step2-sub">Get NWS warnings as soon as they&rsquo;re issued, even when the app is closed.</div>
+      </div>
+      <div class="ob-body">
+        <button class="ob-gps-btn" id="ob-notif-btn" data-click-action="obEnableNotifs">
+          Enable NWS Weather Alerts
+        </button>
+        <!-- "Not now" still advances to step 3 — the Day Ahead summary works without push -->
+        <button class="ob-skip" data-click-action="obAdvanceToStep3">Not now</button>
+      </div>
+      <div class="ob-dots">
+        <span class="ob-dot"></span>
+        <span class="ob-dot ob-dot-active"></span>
+        <span class="ob-dot"></span>
+      </div>
+    </div>
+
+    <!-- Step 3: Day Ahead summary ──────────────────────────────────────────── -->
+    <div id="ob-step3">
+      <div class="ob-top">
+        <div class="ob-notif-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#si-sun"/></svg></div>
+        <div class="ob-title">Daily forecast</div>
+        <div class="ob-sub" id="ob-step3-sub">Get a short forecast summary every day, at a time you choose.</div>
+      </div>
+      <div class="ob-body">
+        <div class="ob-briefing-row">
+          <span>Every day at</span>
+          <select class="tsel" id="ob-briefing-time">
+            <option value="4">4 AM</option>
+            <option value="5">5 AM</option>
+            <option value="6">6 AM</option>
+            <option value="7" selected>7 AM</option>
+            <option value="8">8 AM</option>
+            <option value="9">9 AM</option>
+            <option value="10">10 AM</option>
+            <option value="11">11 AM</option>
+            <option value="12">Noon</option>
+          </select>
+        </div>
+        <button class="ob-gps-btn" data-click-action="obEnableBriefing">
+          ☀️ Enable Day Ahead
+        </button>
+        <button class="ob-skip" data-click-action="obCompleteOnboarding">Not now</button>
+      </div>
+      <div class="ob-dots">
+        <span class="ob-dot"></span>
+        <span class="ob-dot"></span>
+        <span class="ob-dot ob-dot-active"></span>
+      </div>
+    </div>
+
+  </div><!-- /#onboarding-overlay -->
+
+</div><!-- /.phone -->
+
+<!-- N49: `defer` is technically implicit when scripts sit at end-of-body,
+     but explicit `defer` removes any race with late-injected DOM and
+     guarantees execution after DOMContentLoaded across all browsers. -->
+<script defer src="vendor/leaflet/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+        crossorigin="anonymous"></script>
+<script defer src="js/app.js?v=284"></script>
+<script defer src="js/map.js?v=284"></script>
+<script defer src="js/tropical.js?v=284"></script>
+<script defer src="js/winter.js?v=284"></script>
+<script defer src="js/alerts.js?v=284"></script>
+<script defer src="js/notifications.js?v=284"></script>
+<script defer src="js/marine.js?v=284"></script>
+<script defer src="js/spc.js?v=284"></script>
+<script defer src="js/push.js?v=284"></script>
+</body>
+</html>
