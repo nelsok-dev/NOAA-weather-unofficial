@@ -1,0 +1,1425 @@
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --noaa-blue:#005DA6;
+  --noaa-dark:#002244;
+  --noaa-sky:#0085CA;
+  --noaa-red:#C8102E;
+  --noaa-orange:#E87722;
+  --noaa-yellow:#F5A800;
+  --noaa-green:#4CAF50;
+  --card:rgba(0,55,110,0.55);
+  --card2:rgba(0,30,70,0.75);
+  --sep:rgba(255,255,255,0.11);
+  --font:-apple-system,"Helvetica Neue",sans-serif
+}
+html,body{height:100%;background:#0a0a0f;overscroll-behavior:none;overflow:hidden}
+body{font-family:var(--font);color:white;display:flex;justify-content:center;align-items:flex-start;height:100vh;height:100dvh}
+/* In-browser: looks like a phone screen centered on a dark desk */
+.phone{
+  width:390px;
+  height:100vh;
+  height:100dvh;
+  background:#001422;
+  overflow:hidden;
+  position:relative;
+  flex-shrink:0;
+}
+/* On a real phone (Capacitor WKWebView) fill edge-to-edge. 600px covers every
+   iPhone incl. Pro Max (~440px CSS width); iPad (>=744px) intentionally stays
+   the centered phone column until a dedicated tablet layout is built. */
+@media (max-width:600px){
+  html,body{background:#001422}
+  .phone{width:100%;height:100dvh}
+}
+.screen{display:none;flex-direction:column;height:100%}
+.screen.active{display:flex}
+/* Weather screen content scrolls; bottom nav stays pinned */
+#s-wx .hz{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+#s-wx .hz::-webkit-scrollbar{display:none}
+/* Bottom nav sits above the home indicator */
+.scroller{overflow-y:auto;flex:1;min-height:0;scrollbar-width:none;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+/* Push header below the status bar notch */
+.noaa-hdr-inner{padding-top:max(9px,env(safe-area-inset-top,0px))!important}
+/* Lift bottom nav above the home indicator swipe area */
+.bnav{padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+.scroller::-webkit-scrollbar{display:none}
+.noaa-hdr{background:var(--noaa-dark);border-bottom:3px solid var(--noaa-sky);flex-shrink:0}
+.noaa-hdr-inner{display:flex;align-items:center;gap:10px;padding:9px 14px 8px}
+/* App-wide disclaimer rendered as a thin band above the bottom nav on every screen.
+   Replaces the inline "Unofficial · Not affiliated with NOAA/NWS" subtitle that
+   previously lived only inside the Weather/Locations tab headers. */
+.status-strip{background:var(--noaa-sky);padding:3px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ss-txt{font-size:9px;font-weight:700;color:white;letter-spacing:.5px;-webkit-tap-highlight-color:transparent}
+.ss-txt:active{opacity:.7}
+/* Strip iOS system-button white highlight from every hashed interactive button.
+   These classes were generated before the appearance/outline resets were
+   standardised — adding them here avoids regenerating the content hashes. */
+._s-aee0e4,._s-20a43a,._s-dbbfad,._s-0e382a,._s-fa9433,._s-f35538{
+  -webkit-appearance:none;appearance:none;outline:none;-webkit-tap-highlight-color:transparent}
+._s-aee0e4:focus,._s-20a43a:focus,._s-dbbfad:focus,
+._s-0e382a:focus,._s-fa9433:focus,._s-f35538:focus{outline:none}
+.live-chip{display:flex;align-items:center;gap:4px;background:rgba(0,0,50,.35);border-radius:5px;padding:2px 7px;font-size:9px;font-weight:800;color:white}
+.live-chip.stale{background:rgba(80,40,0,.45);color:rgba(255,210,150,.85)}
+.live-chip.stale .live-dot{background:#F5A800}
+/* #14: calm, steady "connected" dot — green when data is fresh — instead of a
+   constantly pulsing red that read as a low-grade alarm on every screen. The
+   amber .stale state above is now the only colour that asks for attention. */
+.live-dot{width:5px;height:5px;background:#34C759;border-radius:50%}
+.sky-bg{position:absolute;top:0;left:0;right:0;height:380px;z-index:0}
+.hz{position:relative;z-index:1}
+.hero{position:relative;text-align:center;padding:8px 0 10px}
+.hero-loc{display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:2px}
+.hero-loc-nm{font-size:20px;font-weight:300;letter-spacing:-.3px}
+.hero-cond{font-size:12px;color:rgba(255,255,255,.78);margin-bottom:4px}
+.hero-main{display:inline-block;position:relative;margin:4px auto;padding-right:50px}
+.hero-icon{width:50px;height:50px;object-fit:contain;display:block;filter:drop-shadow(0 4px 14px rgba(0,0,0,.45))}
+.hero-icon-fb{position:absolute;font-size:40px;line-height:1;top:-10px;right:0;filter:drop-shadow(0 4px 14px rgba(0,0,0,.5))}
+.temp-big{font-size:54px;font-weight:300;letter-spacing:-2px;line-height:1;display:inline-block}
+.temp-rng{font-size:12px;color:rgba(255,255,255,.68)}
+/* Small text link under the H/L line in the hero.
+   ABSOLUTE, deliberately: .wx-top centres the hero against the taller metric-tile
+   column, so adding 23px in normal flow grew the hero from 136 to 164 and pushed
+   the temperature block up ~14px to re-centre. The row never got taller and
+   nothing below it moved, but the hero's own contents shifted, which reads as
+   the layout changing. Out of flow, the hero stays 136px and the temperature,
+   conditions and H/L sit exactly where they did — the link occupies the dead
+   space the centring already left underneath (25px measured, link needs 23). */
+.hero-link{position:absolute;left:0;right:0;bottom:-13px;
+  display:inline-flex;align-items:center;justify-content:center;gap:2px;padding:2px 4px;
+  background:none;border:none;border-radius:6px;cursor:pointer;font-family:var(--font);
+  font-size:11px;font-weight:700;letter-spacing:.2px;color:rgba(0,180,230,.9);
+  -webkit-tap-highlight-color:transparent}
+.hero-link:active{opacity:.6}
+.hero-link .clbl-chev{font-size:15px;vertical-align:-1px}
+/* An explicit display beats the UA's [hidden] rule, so restore it — without
+   this the link stays on screen (and dead) in the 17 states with no roundup. */
+.hero-link[hidden]{display:none}
+/* The link hung 13px below the hero, but only 5px separates the hero row from
+   the tile row under it. Wherever the hero is the row's tallest item (a 440px
+   phone) there was no dead space to use, and the link overlapped the FEELS LIKE
+   tiles by 6px. Reserve its room inside the hero instead — only when it shows,
+   so the 17 states without a roundup keep the compact hero. */
+.wx-top .hero:has(.hero-link:not([hidden])){padding-bottom:24px}
+.wx-top .hero:has(.hero-link:not([hidden])) .hero-link{bottom:0}
+/* ── Weather screen top block ────────────────────────────────────────────────
+   The hero used to be a full-width centred column with the 4x2 tile grid
+   stacked under it, which left a lot of empty space either side of the
+   temperature. Now the hero and the first four tiles share one row (hero left,
+   a 2x2 tile block right) and the remaining four spread across the full width
+   below. Same eight tiles, ~65px less height, which is what lifts the Area
+   Forecast Discussion up the page. */
+/* padding-top: the 2x2 tile block is as tall as the row, so without it the tiles
+   sat flush against the search bar while the hero beside them got 10px from its
+   own padding. 10px matches the gap between every other section on the tab. */
+.wx-top{display:flex;align-items:center;gap:7px;padding:10px 12px 0;margin-bottom:5px}
+.wx-top .hero{flex:1;min-width:0;padding:6px 0 8px}
+/* Long city names must ellipsis rather than force the tile block narrower. */
+.wx-top .hero-loc{min-width:0}
+.wx-top .hero-loc-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ── Weather screen forecast list ────────────────────────────────────────────
+   The card holds the full 14-period run but caps the visible height at roughly
+   four rows and scrolls internally, so every day stays reachable on the
+   Weather tab without the card pushing the Area Forecast Discussion off the
+   page. overscroll-behavior:contain stops a flick inside the list from
+   chaining into the page scroll once it hits an end. */
+.dscroll{position:relative}
+/* 160px ≈ 3.5 rows. Sized so the card plus its expand button still leaves the
+   Area Forecast Discussion heading above the fold on a 414x896 phone — the
+   button costs 22px, so the window gave that back rather than pushing the
+   discussion off screen again. The button is now the affordance for more. */
+.dlist{max-height:160px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain}
+/* Expanded by the "Show all 8 days" button — capped like the AFD's own
+   expanded state so the card can't take over the whole screen. */
+.dlist.dlist-open{max-height:60vh}
+/* Bottom fade cues that there is more below. pointer-events:none so it never
+   swallows a tap on the row underneath it. */
+.dscroll::after{content:'';position:absolute;left:0;right:8px;bottom:0;height:26px;
+  background:linear-gradient(transparent,rgb(0,39,76));pointer-events:none;
+  border-radius:0 0 12px 12px;opacity:1;transition:opacity .18s}
+.dscroll.dscroll-end::after{opacity:0}
+
+/* Equal rows: without this the UV tile's extra scale bar makes row 1 taller
+   than row 2, leaving a hollow gap under WIND beside it. */
+.detg-side{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);
+  gap:5px;flex:0 0 48%;max-width:48%;
+  /* stretch, not the row's centring: when the hero is the taller item the
+     centred tiles dropped below the 10px top gap the hero keeps. */
+  align-self:stretch}
+.card{background:var(--card);backdrop-filter:blur(16px);border-radius:12px;padding:12px 13px;margin:0 12px 10px;border:.5px solid rgba(0,133,202,.3)}
+.clbl{font-size:10px;font-weight:700;color:rgba(0,180,230,.8);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;display:flex;align-items:center;gap:6px;line-height:1}
+.clbl-img{width:14px;height:14px;object-fit:contain}
+.clbl-ico{width:14px;height:14px;flex-shrink:0}
+.hsum-ico{width:13px;height:13px;vertical-align:-2px;margin-right:2px}
+/* Coastal-only "Marine & Tides" teaser shown at the bottom of the Details
+   screen — tap to expand the full marine section (marine.js renderMarineTeaser). */
+.marine-teaser{display:flex;align-items:center;gap:12px;cursor:pointer}
+.marine-teaser:active{background:rgba(0,133,202,.06)}
+.marine-teaser-ico{width:34px;height:34px;border-radius:9px;background:rgba(0,133,202,.22);color:#5AC8FA;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.marine-teaser-txt{flex:1;min-width:0}
+.marine-teaser-title{font-size:14px;font-weight:700;color:#fff}
+.marine-teaser-sub{font-size:11px;color:rgba(235,235,245,.5);margin-top:2px;line-height:1.4}
+.marine-teaser-chev{font-size:20px;color:rgba(0,180,230,.7);flex-shrink:0}
+.hrs{display:flex;overflow-x:auto;gap:2px;scrollbar-width:none}
+.hrs::-webkit-scrollbar{display:none}
+.hr{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 7px;min-width:56px;border-radius:9px;flex-shrink:0}
+.hr.now{background:rgba(0,133,202,.38);border:.5px solid rgba(0,133,202,.55)}
+.hrt{font-size:10px;color:rgba(255,255,255,.58);font-weight:600}
+.hr-img{width:34px;height:34px;object-fit:contain}
+.hr-fb{font-size:24px;line-height:1}
+.hrp{font-size:10px;color:#5AC8FA;font-weight:700;min-height:12px}
+.hrv{font-size:13px;font-weight:600}
+.drow{display:flex;align-items:center;padding:5px 0;border-bottom:.5px solid var(--sep);gap:6px}
+.drow:last-child{border-bottom:none;padding-bottom:2px}
+.drow-night{opacity:.75}
+.dnm{font-size:15px;font-weight:600;width:46px;flex-shrink:0}
+.dperiod-col{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.dperiod{width:auto}
+/* Single summary line per day, holding the truncated detailedForecast.
+   Replaced the old .dshort + .dteaser pair, which repeated themselves
+   ("Clear" above "Clear, with a low around 54..."). */
+.dshort{font-size:11.5px;color:rgba(255,255,255,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Tapping a day row un-clamps this same line rather than revealing a second
+   copy of the sentence below it (which is what .ddetail used to do, back when
+   the line held only the short forecast). */
+.dshort.open{white-space:normal;overflow:visible;color:rgba(255,255,255,.62);
+  animation:dDetailFade .15s ease}
+.drow{cursor:pointer}
+.dtemp{font-size:15px;font-weight:600;flex-shrink:0;text-align:right;padding-left:8px}
+/* Condensed for the Weather screen: the 48px icon, not the text, was setting
+   the .drow height (61px/row). At 34px the row is ~46px, which is what pulls
+   the Area Forecast Discussion up toward the fold. Details screen uses
+   .ext-img and is unaffected. */
+.d-img{width:34px;height:34px;object-fit:contain;flex-shrink:0}
+.d-fb{font-size:26px;width:34px;text-align:center;flex-shrink:0}
+/* margin-bottom 10px, the section rhythm (.card, .abanner) — it was 8px, so the
+   tiles sat closer to the alert banner or hourly card than any other pair. */
+.detg{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 12px;margin-bottom:10px}
+.detc{background:var(--card);backdrop-filter:blur(16px);border-radius:10px;padding:7px 8px;border:.5px solid rgba(0,133,202,.22)}
+.detl{font-size:10px;font-weight:700;color:rgba(0,180,230,.75);text-transform:uppercase;letter-spacing:.2px;margin-bottom:3px;display:flex;align-items:center;gap:3px}
+/* Inline stroke-icon that labels each metric tile (replaces the old emoji). */
+.detl-ico{width:11px;height:11px;flex-shrink:0}
+/* #8/#20: loading shimmer shown in a metric tile's value slot until its async
+   source (UV / visibility / AQI) lands a real reading. */
+.tile-skel{display:inline-block;width:26px;height:14px;border-radius:4px;background:rgba(255,255,255,.14);animation:lcShimmer 1.4s ease-in-out infinite;vertical-align:-1px}
+.detv{font-size:15px;font-weight:300;line-height:1.1}
+.dets{font-size:9px;color:rgba(255,255,255,.45);margin-top:2px}
+.uvbar{height:4px;border-radius:3px;background:linear-gradient(90deg,#44BB44,#FFDD00,#FF8800,#FF3B30,#9B2BA5);margin:4px 0;position:relative}
+.uvdot{width:7px;height:7px;background:white;border-radius:50%;position:absolute;top:-1.5px;transform:translateX(-50%)}
+.abanner{margin:0 12px 10px;padding:9px 12px;background:rgba(200,16,46,.85);border-radius:9px;display:flex;align-items:center;gap:9px;cursor:pointer;border:.5px solid rgba(200,16,46,.9)}
+.ab-img{width:22px;height:22px;object-fit:contain;flex-shrink:0}
+.bnav{background:var(--noaa-dark);border-top:2px solid var(--noaa-sky);padding:8px 0 20px;display:flex;justify-content:space-around;flex-shrink:0;z-index:10}
+.nbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:3px 5px;cursor:pointer;font-family:var(--font);position:relative;min-width:58px}
+.nb-ico{display:flex;align-items:center;justify-content:center;opacity:.38;transition:opacity .2s,color .2s;color:rgba(255,255,255,.9)}
+.nb-ico svg{width:22px;height:22px}
+.nbtn.active .nb-ico{opacity:1;color:var(--noaa-sky)}
+.nl{font-size:9px;color:rgba(255,255,255,.35);font-weight:700;transition:color .2s;letter-spacing:.2px}
+.nbtn.active .nl{color:var(--noaa-sky)}
+.nbtn:focus{outline:none}
+.nbtn:focus-visible{outline:2px solid var(--noaa-sky);outline-offset:-2px;border-radius:6px}
+.nav-badge{position:absolute;top:0;right:3px;min-width:15px;height:15px;background:var(--noaa-red);border-radius:8px;border:2px solid var(--noaa-dark);font-size:8px;font-weight:800;color:white;display:none;align-items:center;justify-content:center;padding:0 2px}
+.nav-badge.show{display:flex}
+.ldg{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 20px;color:rgba(255,255,255,.5)}
+.spin{width:30px;height:30px;border:2px solid rgba(0,133,202,.28);border-top-color:var(--noaa-sky);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.retry-btn{background:var(--noaa-blue);border:none;border-radius:8px;padding:9px 22px;color:white;font-size:14px;font-family:var(--font);cursor:pointer;font-weight:600}
+.ldot{width:7px;height:7px;background:#34C759;border-radius:50%;display:inline-block}
+#map-wrap{width:100%;flex:1;min-height:200px;position:relative;overflow:hidden}
+#lmap{width:100%;height:100%;background:#0a0f1a}
+/* ── Map control deck (two-tier) ─────────────────────────────────────────────
+   Sits inside #map-wrap as an absolute overlay anchored to the bottom edge.
+   Tier 1 (.map-deck-primary) is ALWAYS visible — the high-frequency controls
+   a weather enthusiast reaches for constantly (product, animation scrubber,
+   alerts toggle, legend). Tier 2 (.map-sheet-body) holds set-and-forget
+   fine-tuning (opacity, loop length, satellite underlay, alert filters) and is
+   revealed by tapping the drag handle or the "More" button (.sheet-open). The
+   deck grows upward from the bottom instead of sliding a full panel over the
+   map, so the map is never fully covered. */
+.map-controls{position:absolute;bottom:0;left:0;right:0;z-index:400;
+  background:rgba(0,10,26,.93);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:.5px solid rgba(0,133,202,.25);border-radius:14px 14px 0 0;
+  display:flex;flex-direction:column;max-height:85%;overflow:hidden}
+/* Grip — the sheet's shape, not a control. It used to be a second expander
+   (tap to cycle condensed <-> full tier 1) alongside the "More" button, which
+   meant two affordances for one job and two different results. The labelled
+   button is the only TAP expander; this is the visual cue that the deck can be
+   dragged — up to open, down to close (_bindMapSheetSwipe in map.js). */
+.map-sheet-grip{height:22px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;pointer-events:none}
+.map-sheet-grip::before{content:'';width:36px;height:4px;border-radius:2px;
+  background:rgba(255,255,255,.18)}
+/* Tier 1 — always-visible essentials */
+.map-deck-primary{flex-shrink:0}
+/* Condensed — the state the Map screen opens in. It keeps the three controls
+   people actually came to the map for: the product chips, the playback
+   scrubber, and the loop length. What folds away is the material that explains
+   rather than controls — the reflectivity colour scale and the sentence
+   describing the selected product — plus everything in tier 2.
+
+   It used to fold away the product chips and the loop length too, leaving only
+   the scrubber. That hid the app's headline spec (3-hour loops) behind two
+   taps on the screen the spec belongs to, and it hid the product switcher that
+   makes the four radar and six satellite layers discoverable at all. The
+   screenshot pipeline had to strip .deck-mini to photograph the loop chips,
+   which was the tell.
+
+   The legend now lives at the top of tier 2 (below the Close button), so it
+   folds away with it. The hint stays under the product chips it describes;
+   !important because updateProductHint() sets display inline on it. */
+.map-controls.deck-mini .map-prod-hint{display:none!important}
+.map-controls.deck-mini .deck-quick-row{padding-top:4px}
+/* Tier 2 — fine-tuning, collapsed to 0 height until .sheet-open */
+.map-sheet-body{max-height:0;opacity:0;overflow:hidden;scrollbar-width:none;
+  transition:max-height .3s cubic-bezier(.32,.72,0,1),opacity .2s ease}
+.map-controls.sheet-open .map-sheet-body{max-height:48vh;opacity:1;overflow-y:auto;
+  padding-bottom:10px;border-top:.5px solid rgba(0,133,202,.16)}
+.map-sheet-body>.lgnd-row{padding-top:10px}
+/* Drag-to-open/close: the deck follows the finger (transform, set from JS)
+   and springs back on release; no transition while the finger is down. */
+.map-controls{transition:transform .28s cubic-bezier(.32,.72,0,1)}
+.map-controls.sheet-dragging{transition:none}
+.map-controls.sheet-dragging .map-sheet-body{transition:none}
+.map-sheet-body::-webkit-scrollbar{display:none}
+/* Base-layer switch — floating segmented control, top-center over the map */
+.map-base-seg{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:500;
+  display:flex;gap:3px;padding:3px;border-radius:13px;
+  background:rgba(0,16,34,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border:.5px solid rgba(0,133,202,.4)}
+.lbtn{display:flex;align-items:center;gap:5px;padding:5px 15px;border:none;border-radius:10px;
+  font-size:11px;font-weight:700;font-family:var(--font);cursor:pointer;
+  color:rgba(255,255,255,.55);background:transparent}
+.lbtn .li{font-size:13px}
+.lbtn.on,.lbtn.on-sat,.lbtn.on-lt{background:rgba(0,133,202,.45);color:#9fdcff}
+/* Quick row — the "More" expander at the bottom of tier 1 */
+.deck-quick-row{display:flex;align-items:center;justify-content:center;padding:8px 12px 9px}
+.deck-more-btn{display:flex;align-items:center;justify-content:center;gap:6px;flex:1;cursor:pointer;
+  background:rgba(0,40,90,.6);border:.5px solid rgba(0,133,202,.4);border-radius:9px;
+  color:#9fdcff;font-size:11px;font-weight:700;font-family:var(--font);padding:8px 13px}
+.deck-more-chev{display:inline-block;font-size:12px;line-height:1;transition:transform .3s ease}
+.map-controls.sheet-open .deck-more-chev{transform:rotate(180deg)}
+
+.overlay-row{display:flex;align-items:center;justify-content:space-between;margin:6px 12px 0;background:rgba(200,16,46,.1);border:.5px solid rgba(200,16,46,.3);border-radius:9px;padding:4px 10px}
+.alert-tier-row{display:flex;gap:5px;padding:6px 12px 0}
+.atbtn{padding:4px 11px;border-radius:15px;font-size:11px;font-weight:700;border:.5px solid rgba(255,255,255,.08);cursor:pointer;white-space:nowrap;font-family:var(--font);background:rgba(0,40,90,.6);color:rgba(255,255,255,.48);flex:1;text-align:center}
+.atbtn.on{background:rgba(200,16,46,.25);border-color:rgba(200,16,46,.5);color:#ff6b6b}
+/* #9: loop-length selector (1/2/3 hr). It used to own a labelled row directly
+   under the scrubber, which cost ~38px of deck height for three chips. It now
+   shares the playback row with the speed chips — both answer "how does the
+   animation play" — leaving that height to the map. The "Loop length" caption
+   went with the row; the chips carry aria-label / title instead. */
+.loop-len-btns{display:flex;gap:4px;flex-shrink:0}
+.llbtn{padding:4px 7px;line-height:1;border-radius:7px;font-size:11px;font-weight:700;border:.5px solid rgba(0,133,202,.35);cursor:pointer;white-space:nowrap;font-family:var(--font);background:rgba(0,133,202,.15);color:rgba(255,255,255,.55)}
+.llbtn.active{background:rgba(0,133,202,.4);border-color:#5AC8FA;color:#5AC8FA}
+.prod-row{display:flex;gap:5px;padding:8px 12px 0;overflow-x:auto;scrollbar-width:none}
+.prod-row::-webkit-scrollbar{display:none}
+.prbtn{padding:5px 11px;border-radius:15px;font-size:11px;font-weight:700;border:.5px solid rgba(255,255,255,.08);cursor:pointer;white-space:nowrap;font-family:var(--font);background:rgba(0,40,90,.6);color:rgba(255,255,255,.48);flex-shrink:0}
+.prbtn.on{background:rgba(0,133,202,.35);border-color:rgba(0,133,202,.6);color:#5AC8FA}
+.lgnd-row{display:flex;align-items:center;gap:8px;padding:7px 13px 0}
+.lgnd-bar{flex:1;height:5px;border-radius:3px}
+.lgnd-lbl{font-size:10px;color:rgba(255,255,255,.27);white-space:nowrap}
+.al-lgnd{display:flex;flex-wrap:wrap;gap:5px 12px;padding:7px 13px 0}
+.ali{display:flex;align-items:center;gap:5px;font-size:10px;color:rgba(255,255,255,.48)}
+.ali-btn{cursor:pointer;padding:3px 5px;border-radius:5px;margin:-3px -5px;transition:background .15s}
+.ali-btn:active{background:rgba(255,255,255,.1)}
+.als{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.nws-popup .leaflet-popup-content-wrapper{background:#001c3a;border:.5px solid rgba(0,133,202,.4);border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.6);padding:0;overflow:hidden}
+.nws-popup .leaflet-popup-tip{background:#001c3a}
+.nws-popup .leaflet-popup-content{margin:0;width:auto!important}
+.nws-popup .leaflet-popup-close-button{color:rgba(255,255,255,.55);right:6px;top:6px;font-size:18px}
+.nws-popup .leaflet-popup-close-button:hover{color:#fff}
+/* Active-location marker popup */
+.noaa-popup .leaflet-popup-content-wrapper{background:#001c3a;border:.5px solid rgba(0,133,202,.55);border-radius:9px;box-shadow:0 4px 18px rgba(0,0,0,.5);padding:0}
+.noaa-popup .leaflet-popup-tip{background:#001c3a}
+.noaa-popup .leaflet-popup-content{margin:0}
+.noaa-popup .leaflet-popup-close-button{color:rgba(255,255,255,.5);font-size:16px}
+.loc-pop{font-family:var(--font);padding:8px 12px 9px;color:#fff;min-width:160px}
+.loc-pop-name{font-size:13px;font-weight:700;color:#5AC8FA}
+.loc-pop-sub{font-size:10px;color:rgba(255,255,255,.55);margin-top:2px;line-height:1.4}
+
+/* Plain-English product description shown beneath the product row */
+.map-prod-hint{font-size:10px;color:rgba(255,255,255,.48);line-height:1.45;padding:0 12px 6px;font-style:italic}
+
+/* Custom thin scrollbar for the NWS Forecast Discussion box so long AFDs are
+   obviously scrollable rather than appearing truncated. */
+.afd-scroll,.dlist{scrollbar-width:thin;scrollbar-color:rgba(0,133,202,.55) rgba(0,30,70,.4)}
+.afd-scroll::-webkit-scrollbar,.dlist::-webkit-scrollbar{width:6px}
+.afd-scroll::-webkit-scrollbar-track,.dlist::-webkit-scrollbar-track{background:rgba(0,30,70,.4);border-radius:3px}
+.afd-scroll::-webkit-scrollbar-thumb,.dlist::-webkit-scrollbar-thumb{background:rgba(0,133,202,.55);border-radius:3px}
+.afd-scroll::-webkit-scrollbar-thumb:hover,.dlist::-webkit-scrollbar-thumb:hover{background:rgba(0,133,202,.8)}
+
+/* Pull-to-refresh indicator above the map.
+   Hidden by default; revealed/grown via inline `height` while the user drags.
+   Becomes "Release to refresh" once threshold is crossed (.ready class).
+   The "↓" arrow rotates to "↑" when ready. */
+.map-pull{height:0;overflow:hidden;background:var(--noaa-dark);display:flex;align-items:center;justify-content:center;gap:8px;color:#5AC8FA;font-size:12px;font-weight:700;font-family:var(--font);transition:none;letter-spacing:.3px;border-bottom:.5px solid rgba(0,133,202,.25)}
+.map-pull.snap{transition:height .25s ease}
+.map-pull.ready{color:#5AC8FA}
+.map-pull.ready .map-pull-ico{transform:rotate(180deg)}
+.map-pull.refreshing .map-pull-ico{animation:noaaPullSpin .8s linear infinite}
+.map-pull-ico{display:inline-block;font-size:14px;transition:transform .15s ease}
+@keyframes noaaPullSpin{to{transform:rotate(360deg)}}
+
+/* Fullscreen toggle — floats on the map; hides controls when active */
+.map-fs-btn{position:absolute;top:10px;left:10px;z-index:500;background:rgba(0,28,58,.85);border:.5px solid rgba(0,133,202,.5);border-radius:7px;width:32px;height:32px;color:#5AC8FA;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.map-fs-btn:active{background:rgba(0,93,166,.45)}
+.map-refresh-btn{left:50px}
+.map-refresh-btn.spinning svg{animation:noaaPullSpin .8s linear infinite}
+/* Fullscreen hides the control deck + base switch for an unobstructed map */
+#s-map.map-fullscreen .map-controls,
+#s-map.map-fullscreen .map-base-seg{display:none}
+/* OpenStreetMap credit (ODbL). Leaflet's default is black-on-white, which is
+   unreadable over dark radar — restyle as a subtle chip matching the other map
+   overlays. Bottom-right, the conventional place for it, lifted clear of the
+   control deck by --deck-h: the deck is absolutely positioned over the lower
+   part of #lmap, so a fixed bottom offset would be buried the moment the deck
+   expands. _syncDeckHeight() in map.js keeps the variable in step with the
+   deck's actual height in every state (condensed, full, sheet open,
+   fullscreen). */
+.leaflet-control-attribution{
+  background:rgba(0,16,34,.72)!important;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  color:rgba(255,255,255,.55)!important;font-family:var(--font);font-size:9px;line-height:1.2;
+  padding:2px 6px;border-radius:6px;
+  margin:0 10px calc(var(--deck-h, 0px) + 8px) 0!important;
+  transition:margin-bottom .3s cubic-bezier(.32,.72,0,1);
+  border:.5px solid rgba(0,133,202,.25)}
+.osm-attrib-link{color:rgba(90,200,250,.85);text-decoration:underline;cursor:pointer}
+/* Fullscreen hides the deck for an unobstructed radar view — the credit itself
+   must stay, it is a licence condition, not decoration. Just fade it back. */
+#s-map.map-fullscreen .leaflet-control-attribution{opacity:.75}
+.nws-pop-wrap{font-family:-apple-system,"Helvetica Neue",sans-serif;width:260px}
+.nws-pop-hdr{position:relative;padding:9px 40px 8px 12px;color:white}
+/* Inherits the header's text colour, which flips to dark on light alert fills
+   (yellow watches, cyan advisories) — see _hdrTextColor() in map.js. */
+.nws-pop-x{position:absolute;top:0;right:0;width:38px;height:38px;display:flex;align-items:center;justify-content:center;background:none;border:none;color:inherit;opacity:.9;font-size:24px;line-height:1;cursor:pointer;padding:0;-webkit-tap-highlight-color:transparent}
+.nws-pop-x:hover{opacity:1}
+.nws-pop-x:active{opacity:.6}
+.nws-pop-event{font-size:14px;font-weight:700}
+.nws-pop-area{font-size:10px;opacity:.75;margin-top:2px;line-height:1.3}
+.nws-pop-body{padding:9px 12px 11px;max-height:230px;overflow-y:auto;scrollbar-width:none}
+.nws-pop-body::-webkit-scrollbar{display:none}
+.nws-pop-exp{font-size:10px;color:rgba(255,255,255,.38);margin-bottom:6px}
+/* Collapsed alert list: one tappable row per alert under the tap point, prose
+   hidden until the row is opened so the popup stays a card, not a page. */
+.nws-pa-item + .nws-pa-item{border-top:.5px solid rgba(255,255,255,.08)}
+.nws-pa-row{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:8px 0;color:inherit;text-align:left;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.nws-pa-row:active{opacity:.6}
+.nws-pa-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%}
+.nws-pa-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nws-pa-ev{font-size:12px;font-weight:600;color:rgba(255,255,255,.9);line-height:1.3}
+.nws-pa-sub{font-size:10px;color:rgba(255,255,255,.4);line-height:1.2}
+.nws-pa-chev{flex:0 0 auto;font-size:15px;color:rgba(255,255,255,.35);transition:transform .18s ease}
+.nws-pa-item.open .nws-pa-chev{transform:rotate(90deg)}
+.nws-pa-det{display:none;padding:2px 0 8px}
+.nws-pa-item.open .nws-pa-det{display:block}
+.nws-pa-area{font-size:10px;color:rgba(255,255,255,.45);line-height:1.35;margin-bottom:6px}
+/* Truncated location list — see areaListHTML() in app.js. The overflow lives in
+   the DOM rather than behind a line-clamp so "+N more locations" can state the
+   real count, and so the hidden names aren't read out by screen readers or
+   found by in-page search while collapsed. */
+.area-rest{display:none}
+.area-list.area-open .area-rest{display:inline}
+.area-more{display:inline;background:none;border:none;padding:0 0 0 5px;cursor:pointer;
+  font-family:var(--font);font-size:inherit;font-weight:700;color:rgba(90,200,250,.9);
+  text-decoration:underline;text-underline-offset:2px;-webkit-tap-highlight-color:transparent}
+.area-more:active{opacity:.6}
+.nws-pop-hdr .area-more{color:inherit;opacity:.9}
+.nws-pa-open{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;margin-top:9px;
+  background:rgba(0,133,202,.22);border:.5px solid rgba(0,133,202,.5);border-radius:8px;
+  color:#9fdcff;font-family:var(--font);font-size:11px;font-weight:700;padding:7px 10px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+.nws-pa-open:active{opacity:.6}
+.nws-pop-headline{font-size:11px;font-weight:600;color:rgba(255,255,255,.85);margin-bottom:7px;line-height:1.4}
+.nws-pop-desc{font-size:11px;color:rgba(255,255,255,.65);white-space:pre-wrap;line-height:1.55;margin-bottom:8px}
+.nws-pop-instr{font-size:11px;color:rgba(90,200,250,.85);line-height:1.5;border-top:.5px solid rgba(255,255,255,.1);padding-top:7px}
+.radar-anim{display:flex;align-items:center;gap:7px;padding:8px 12px;background:rgba(0,20,50,.75);border-top:.5px solid rgba(0,133,202,.2)}
+.ranim-btn{background:rgba(0,133,202,.25);border:.5px solid rgba(0,133,202,.55);border-radius:7px;color:#5AC8FA;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font);line-height:1}
+.ranim-play{min-width:30px;text-align:center}
+.ranim-time{color:rgba(255,255,255,.7);font-size:11px;font-weight:700;font-family:var(--font);min-width:42px}
+.ranim-speeds{display:flex;gap:3px;flex-shrink:0}
+/* Speed, loop length and refresh share one row doing one kind of job, so they
+   share one chip metric: 11px/700 in a 7px pill with 4px 7px of padding. The
+   speeds were 9px/800 in a 5px pill, which read as a lesser class of control
+   beside their neighbours. Scoped to this row on purpose — sizes elsewhere
+   differ because the jobs differ, and flattening those would be change for its
+   own sake. */
+.rspd{background:rgba(0,133,202,.15);border:.5px solid rgba(0,133,202,.35);border-radius:7px;color:rgba(255,255,255,.55);font-size:11px;font-weight:700;font-family:var(--font);padding:4px 7px;cursor:pointer;line-height:1}
+.rspd.active{background:rgba(0,133,202,.4);border-color:#5AC8FA;color:#5AC8FA}
+/* Frame scrubber. A native range input for free drag/tap/keyboard handling and
+   the OS's own touch slop; the track is painted manually because WebKit has no
+   progress pseudo-element for range inputs, and the thumb is 22px so it stays
+   grabbable on a phone. --scrub is set by updateFrameUI(). */
+/* Transport + bar + time. Tighter gaps than the row above: this row carries
+   three buttons and a label around a slider that wants every pixel left over,
+   since its width is the scrubbing resolution. */
+.ranim-scrub-row{display:flex;align-items:center;gap:6px;padding:0 12px 9px;background:rgba(0,20,50,.75)}
+.ranim-scrub-row .ranim-time{margin-left:2px}
+/* Reload sits WITH the speed and loop chips behind a divider, not flushed right
+   with margin-left:auto, which read as banished to the edge rather than part of
+   the group. It wears the row's clothes: the same
+   pill as the speed and loop chips rather than a bare glyph, which read as an
+   odd one out among text. The glyph keeps its own size — U+21BB draws small
+   next to text at the same font-size. */
+.ranim-reload{display:flex;align-items:center;gap:5px;
+  padding:4px 7px;line-height:1;border-radius:7px;font-size:11px;font-weight:700;
+  font-family:var(--font);cursor:pointer;white-space:nowrap;
+  border:.5px solid rgba(0,133,202,.35);background:rgba(0,133,202,.15);
+  color:rgba(255,255,255,.55);-webkit-tap-highlight-color:transparent}
+.ranim-reload:active{opacity:.6}
+.ranim-reload-ico{font-size:12.5px;line-height:1}
+.ranim-scrub-row .ranim-slider{flex:1;min-width:0}
+/* Divider between the two groups that share the playback row — speed on the
+   left, loop length on the right. */
+.ranim-div{width:1px;height:16px;background:rgba(255,255,255,.16);flex-shrink:0}
+.ranim-slider{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:none;
+  margin:0;cursor:pointer;-webkit-tap-highlight-color:transparent;display:block}
+.ranim-slider::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+  background:linear-gradient(to right,#5AC8FA 0,#5AC8FA var(--scrub,0%),rgba(255,255,255,.16) var(--scrub,0%),rgba(255,255,255,.16) 100%)}
+.ranim-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+  width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #5AC8FA;
+  margin-top:-6px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.ranim-slider:active::-webkit-slider-thumb{transform:scale(1.15)}
+.ranim-slider::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.16)}
+.ranim-slider::-moz-range-progress{height:4px;border-radius:2px;background:#5AC8FA}
+.ranim-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #5AC8FA}
+.map-src{padding:5px 13px 0;font-size:9px;color:rgba(255,255,255,.17);line-height:1.5}
+.op-row{display:flex;align-items:center;gap:10px;padding:7px 13px 0}
+.op-row label{font-size:10px;color:rgba(255,255,255,.35);font-weight:600;white-space:nowrap}
+.op-row input[type=range]{flex:1;accent-color:var(--noaa-sky)}
+.op-row span{font-size:10px;color:rgba(255,255,255,.35);min-width:28px;text-align:right}
+.ac{background:var(--card);border-radius:10px;margin:0 12px 8px;overflow:hidden;cursor:pointer;border:.5px solid rgba(0,133,202,.18)}
+.acbar{height:4px}
+.achdr{padding:10px 12px 6px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.achdr-left{display:flex;align-items:center;gap:8px;min-width:0}
+.acsev{font-size:10px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+.ac-sev-img{width:18px;height:18px;object-fit:contain}
+.ac-nearme{font-size:9px;font-weight:800;letter-spacing:.3px;color:rgba(90,200,250,.95);background:rgba(90,200,250,.14);border-radius:5px;padding:2px 6px;white-space:nowrap}
+.acago{font-size:10px;color:rgba(235,235,245,.28);white-space:nowrap}
+.actitle{font-size:14px;font-weight:700;padding:0 12px 4px}
+.acarea{font-size:11px;color:rgba(235,235,245,.48);padding:0 12px 10px}
+.acarea-list{display:inline}
+.ac-tap-hint{opacity:.7}
+/* Issued + runs-until, under the area line on the collapsed card. */
+.ac-times{font-size:10px;color:rgba(235,235,245,.34);line-height:1.35;padding:0 12px 10px;margin-top:-6px}
+.acbody{font-size:11px;color:rgba(235,235,245,.62);line-height:1.6;padding:0 12px 12px;display:none}
+.ac-desc{white-space:pre-wrap}
+.ac-instr{color:rgba(90,200,250,.85);border-top:.5px solid rgba(255,255,255,.1);padding-top:8px;margin-top:8px;line-height:1.5}
+.ac-src{display:block;margin-top:11px;font-size:10px;color:rgba(235,235,245,.35)}
+.lcard-wrap{position:relative;overflow:hidden}
+.lcard-del{position:absolute;right:12px;top:7px;bottom:7px;width:60px;background:#C8102E;border:none;border-radius:9px;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1}
+.lcard{margin:7px 12px;border-radius:11px;padding:13px;cursor:pointer;position:relative;overflow:hidden;border:.5px solid rgba(255,255,255,.1);z-index:2;transition:transform .2s ease;background-clip:padding-box}
+/* P4: active-location highlight applied via class (not inline style) so switching
+   active city doesn't invalidate the locCardHTML string and reload card images. */
+.lcard.lcard-active{border:1.5px solid rgba(0,133,202,.7)}
+/* U1: shimmer on condition line while fetchLocSummary is in flight */
+@keyframes lcShimmer{0%,100%{opacity:.25}50%{opacity:.6}}
+.lc-loading{height:12px;border-radius:6px;background:rgba(255,255,255,.1);animation:lcShimmer 1.4s ease-in-out infinite;min-width:80px}
+/* U3: "search above to add" hint below the card list */
+.loc-add-hint{text-align:center;font-size:11px;color:rgba(255,255,255,.18);padding:2px 12px 18px;font-style:italic}
+.lcnm{font-size:18px;font-weight:700}
+.lcc{font-size:12px;color:rgba(255,255,255,.75)}
+.lc-nws{position:absolute;right:12px;top:10px;width:50px;height:50px;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,.45))}
+.ios-tog{position:relative;width:51px;height:31px;flex-shrink:0}
+.ios-tog input{opacity:0;width:0;height:0;position:absolute}
+.tog-track{position:absolute;inset:0;background:rgba(255,255,255,.15);border-radius:16px;cursor:pointer;transition:background .25s}
+.ios-tog input:checked+.tog-track{background:var(--noaa-green)}
+.ios-tog.orange input:checked+.tog-track{background:var(--noaa-orange)}
+.ios-tog.blue input:checked+.tog-track{background:var(--noaa-sky)}
+.tog-thumb{position:absolute;top:2px;left:2px;width:27px;height:27px;background:white;border-radius:50%;transition:transform .22s;pointer-events:none;box-shadow:0 2px 5px rgba(0,0,0,.3)}
+.ios-tog input:checked~.tog-thumb{transform:translateX(20px)}
+.sec-lbl{font-size:10px;font-weight:800;color:rgba(0,180,230,.85);text-transform:uppercase;letter-spacing:.65px;padding:0 14px;margin-bottom:7px}
+.how-alerts{list-style:none;margin:0;padding:0}
+.how-alerts li{position:relative;padding-left:14px;font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.72);margin:0 0 7px}
+.how-alerts li:last-child{margin-bottom:0}
+.how-alerts li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:#5AC8FA}
+.grp{background:var(--card2);border-radius:11px;margin:0 12px;overflow:hidden;border:.5px solid rgba(0,133,202,.18)}
+.srow{display:flex;align-items:center;padding:12px 13px;border-bottom:.5px solid rgba(255,255,255,.06);gap:11px;min-height:52px}
+.srow:last-child{border-bottom:none}
+.srow-ico{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:rgba(255,255,255,.85)}
+.srow-txt{flex:1;min-width:0}
+.srow-title{font-size:14px;font-weight:500}
+.srow-sub{font-size:11px;color:rgba(255,255,255,.36);margin-top:2px;line-height:1.3}
+.srow-r{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.sev-row{display:flex;gap:7px;flex-wrap:wrap}
+.sev-chip{padding:6px 13px;border-radius:17px;font-size:11px;font-weight:700;border:.5px solid transparent;cursor:pointer;font-family:var(--font);opacity:.5}
+.sev-chip.sel{opacity:1;outline:2px solid currentColor;outline-offset:2px}
+.sev-chip.extreme{background:rgba(200,16,46,.22);color:#C8102E;border-color:rgba(200,16,46,.4)}
+.sev-chip.severe{background:rgba(232,119,34,.18);color:#E87722;border-color:rgba(232,119,34,.4)}
+.sev-chip.moderate{background:rgba(245,168,0,.18);color:#F5A800;border-color:rgba(245,168,0,.38)}
+.sev-chip.minor{background:rgba(76,175,80,.15);color:#66BB6A;border-color:rgba(76,175,80,.35)}
+.perm{border-radius:11px;padding:14px;margin:0 12px}
+.perm.default{background:rgba(0,93,166,.2);border:.5px solid rgba(0,133,202,.4)}
+.perm.granted{background:rgba(52,199,89,.12);border:.5px solid rgba(52,199,89,.35)}
+.perm.denied{background:rgba(200,16,46,.1);border:.5px solid rgba(200,16,46,.3)}
+.perm-title{font-size:14px;font-weight:700;margin-bottom:5px}
+.perm-sub{font-size:12px;color:rgba(255,255,255,.52);line-height:1.5;margin-bottom:11px}
+.perm-btn{background:#005DA6;border:none;border-radius:8px;padding:10px;color:white;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;width:100%}
+.test-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,93,166,.2);border:.5px solid rgba(0,133,202,.4);border-radius:9px;padding:13px;color:#5AC8FA;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;width:calc(100% - 24px);margin:0 12px}
+.tsel{background:rgba(0,40,90,.7);border:.5px solid rgba(0,133,202,.35);border-radius:7px;color:white;font-size:16px;font-family:var(--font);padding:5px 8px;outline:none;cursor:pointer}
+.tsel option{background:#001422}
+.unit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0}
+.unit-row+.unit-row{border-top:.5px solid rgba(255,255,255,.06);margin-top:8px;padding-top:8px}
+.unit-lbl{font-size:12px;color:rgba(255,255,255,.6)}
+.unit-chips{display:flex;gap:5px}
+.uchip{padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;border:.5px solid rgba(255,255,255,.12);cursor:pointer;font-family:var(--font);background:rgba(0,40,90,.6);color:rgba(255,255,255,.38)}
+.uchip.sel{background:rgba(0,133,202,.35);border-color:rgba(0,133,202,.6);color:#5AC8FA}
+#toast{position:fixed;top:0;left:50%;transform:translate(-50%,-100%);width:min(366px,calc(100% - 32px));z-index:999;background:rgba(0,18,45,.97);backdrop-filter:blur(24px);border-radius:0 0 16px 16px;border:.5px solid rgba(0,133,202,.35);border-top:3px solid #C8102E;padding:calc(12px + env(safe-area-inset-top,0px)) 14px 14px;display:flex;align-items:flex-start;gap:11px;transition:transform .38s cubic-bezier(.34,1.56,.64,1);cursor:pointer}
+#toast.show{transform:translate(-50%,0)}
+.t-img{width:38px;height:38px;object-fit:contain;flex-shrink:0}
+.t-fb{font-size:30px;flex-shrink:0}
+.t-body{flex:1;min-width:0}
+.t-app{font-size:9px;color:rgba(255,255,255,.38);font-weight:800;letter-spacing:.6px;margin-bottom:2px;text-transform:uppercase}
+.t-title{font-size:13px;font-weight:700;margin-bottom:2px}
+.t-msg{font-size:12px;color:rgba(255,255,255,.6);line-height:1.35}
+.t-close{background:none;border:none;color:rgba(255,255,255,.3);font-size:16px;cursor:pointer;flex-shrink:0;line-height:1;align-self:flex-start}
+/* .nh-wrap owns the margin, border-radius, and overflow so the card fills the
+   full width and keeps the .nh-del delete button hidden until swiped. */
+.nh-wrap{position:relative;overflow:hidden;margin:0 12px 8px;border-radius:10px}
+.nh-del{position:absolute;right:0;top:0;bottom:0;width:64px;background:#C8102E;border:none;color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1;-webkit-tap-highlight-color:transparent}
+/* Notification history items now use the same card structure as active alerts.
+   No margin/radius here — .nh-wrap handles both so the card covers .nh-del.
+   Background must be fully opaque so the red .nh-del button can't bleed
+   through — var(--card) is only 55% opaque which would show the red layer. */
+.notif-item{background:#001e46;cursor:pointer;border:.5px solid rgba(0,133,202,.18);position:relative;z-index:2;transition:transform .2s ease}
+/* Dim already-read items so unread ones stand out */
+.n-read .acbar{opacity:.4}
+.n-read .acsev{opacity:.42}
+.n-read .actitle{opacity:.45;font-weight:500}
+.n-read .acago{opacity:.38}
+.n-read .acarea{opacity:.35}
+.n-read .ac-times{opacity:.35}
+/* ── Detail Forecast tab ───────────────────────────────────────────────────── */
+.sm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 0}
+.sm-item{background:rgba(0,40,90,.45);border-radius:10px;padding:10px 12px;border:.5px solid rgba(0,133,202,.18)}
+.sm-lbl{font-size:9px;font-weight:800;letter-spacing:.5px;color:rgba(255,255,255,.35);margin-bottom:4px}
+.sm-val{font-size:13px;font-weight:700;color:rgba(255,255,255,.9)}
+.buoy-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:4px 0}
+.buoy-item{background:rgba(0,40,90,.45);border-radius:10px;padding:9px 10px;border:.5px solid rgba(0,133,202,.18)}
+.buoy-lbl{font-size:8px;font-weight:800;letter-spacing:.5px;color:rgba(255,255,255,.35);margin-bottom:4px}
+.buoy-val{font-size:14px;font-weight:700;color:rgba(255,255,255,.9);line-height:1.2}
+.buoy-sub{font-size:9px;color:rgba(255,255,255,.38);margin-top:2px}
+.tide-list{display:flex;flex-direction:column;gap:0}
+.tide-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:.5px solid rgba(255,255,255,.06)}
+.tide-row:last-child{border-bottom:none}
+.tide-row.tide-past{opacity:.38}
+.tide-type{font-size:10px;font-weight:800;letter-spacing:.4px;min-width:46px}
+.tide-high{color:#5AC8FA}
+.tide-low{color:rgba(255,255,255,.45)}
+.tide-time{font-size:11px;color:rgba(255,255,255,.6);flex:1}
+.tide-ft{font-size:13px;font-weight:700;color:rgba(255,255,255,.9);text-align:right}
+
+/* ── Global Search Row (all tabs) ──────────────────────────────────────────── */
+.global-search-row{position:relative;background:rgba(0,133,202,.06);border-bottom:.5px solid rgba(0,133,202,.18);padding:5px 10px;flex-shrink:0}
+.gsr-inner{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.07);border:.5px solid rgba(0,133,202,.35);border-radius:9px;padding:0 0 0 10px}
+.gsr-srch-ico{flex-shrink:0;color:rgba(255,255,255,.3)}
+/* font-size must be >= 16px to prevent iOS Safari from auto-zooming the viewport on focus */
+.gsr-input{flex:1;background:none;border:none;color:#fff;font-size:16px;padding:6px 0;outline:none;font-family:var(--font);-webkit-appearance:none}
+.gsr-input::placeholder{color:rgba(255,255,255,.28)}
+.gsr-gps{background:rgba(0,133,202,.18);border:none;border-left:.5px solid rgba(0,133,202,.3);border-radius:0 8px 8px 0;color:#5AC8FA;cursor:pointer;padding:7px 11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s;-webkit-tap-highlight-color:transparent}
+.gsr-gps:active,.gsr-gps.locating{background:rgba(0,133,202,.45);color:#fff}
+.gsr-drop{display:none;position:absolute;left:10px;right:10px;top:calc(100% - 3px);background:#0a1628;border:.5px solid rgba(0,133,202,.5);border-radius:9px;z-index:999;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.7)}
+.gsr-item{padding:10px 13px;cursor:pointer;border-top:.5px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:2px}
+.gsr-item:first-child{border-top:none}
+.gsr-item:active,.gsr-item.kb-active{background:rgba(0,133,202,.18)}
+
+/* Hourly tab — Next-24h summary card */
+.hrly-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+/* Tiles inside a card all share the 10px corner (.detc, .sm-item); this one
+   was 8px, which is not a difference anything was trying to express. */
+.hsum-item{background:rgba(0,30,70,.45);border:.5px solid rgba(0,133,202,.18);border-radius:10px;padding:6px 8px;min-height:48px}
+.hsum-lbl{font-size:8px;font-weight:700;color:rgba(0,180,230,.75);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px}
+.hsum-val{font-size:14px;font-weight:600;line-height:1.15;color:#fff}
+.hsum-sub{font-size:9px;color:rgba(255,255,255,.45);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Vertical day-break separator inside an .hrs horizontal scroller */
+.hr-daybreak{display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 4px;min-width:30px;border-left:1px dashed rgba(0,180,230,.4)}
+.hr-daybreak span{font-size:9px;font-weight:800;color:rgba(0,180,230,.85);text-transform:uppercase;letter-spacing:.5px;writing-mode:vertical-rl;transform:rotate(180deg)}
+.hr{cursor:pointer}
+.hr-caption{font-size:11px;color:rgba(255,255,255,.6);padding:4px 4px 0;min-height:14px;opacity:0;transition:opacity .15s ease}
+.gsr-item-name{font-size:13px;color:#fff;font-weight:500}
+.gsr-item-sub{font-size:11px;color:rgba(255,255,255,.38)}
+.gsr-msg{padding:10px 13px;font-size:12px;color:rgba(255,255,255,.38);display:flex;align-items:center;gap:8px}
+.gsr-msg .spin-sm{width:12px;height:12px;border:1.5px solid rgba(0,133,202,.28);border-top-color:var(--noaa-sky);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+/* Standalone small spinner — usable anywhere (e.g. onboarding GPS button) */
+.spin-sm{width:14px;height:14px;border:2px solid rgba(0,133,202,.28);border-top-color:var(--noaa-sky);border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;flex-shrink:0}
+
+/* ── First-run onboarding overlay ──────────────────────────────────────────── */
+/* Covers the full .phone shell so the user can't interact with the app until
+   they've picked a location (or explicitly skipped). z-index 1000 sits above
+   the toast (999). Shown by adding .show; hidden by removing it. */
+.ob-overlay{position:absolute;inset:0;z-index:1000;background:#001422;display:none;flex-direction:column;align-items:center;justify-content:center;padding:36px 26px 28px;overflow:hidden}
+.ob-overlay.show{display:flex}
+/* Step panels — only one active at a time */
+#ob-step1,#ob-step2{display:none;flex-direction:column;align-items:center;width:100%}
+#ob-step1.ob-active,#ob-step2.ob-active{display:flex}
+/* Header block */
+.ob-top{display:flex;flex-direction:column;align-items:center;margin-bottom:28px}
+.ob-app-icon{border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,.55);margin-bottom:18px}
+.ob-notif-icon{display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+.ob-notif-icon svg{width:56px;height:56px;color:var(--noaa-sky)}
+/* #17: personalized current-conditions pill above the notification ask. */
+.ob-cond-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(0,133,202,.14);border:.5px solid rgba(0,133,202,.4);border-radius:15px;padding:5px 13px;font-size:12.5px;font-weight:600;color:rgba(255,255,255,.85);margin-bottom:14px;max-width:300px;text-align:center}
+.ob-cond-chip[hidden]{display:none}
+/* #18: trust microcopy beneath the GPS button. */
+.ob-title{font-size:26px;font-weight:700;text-align:center;margin-bottom:9px;letter-spacing:-.3px}
+.ob-sub{font-size:14px;color:rgba(255,255,255,.55);text-align:center;line-height:1.6;max-width:290px}
+/* Action block */
+.ob-body{width:100%;display:flex;flex-direction:column;gap:13px}
+/* Primary CTA — big, bright, full-width */
+.ob-gps-btn{width:100%;padding:16px;background:var(--noaa-sky);border:none;border-radius:14px;color:#fff;font-size:16px;font-weight:700;font-family:var(--font);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:opacity .15s,-webkit-tap-highlight-color 0s}
+.ob-gps-btn:active{opacity:.8}
+.ob-gps-btn.locating{opacity:.65;pointer-events:none}
+/* Three-pulse ring animation to draw the eye on first show */
+@keyframes obPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,133,202,.65)}70%{box-shadow:0 0 0 14px rgba(0,133,202,0)}}
+.ob-gps-btn.pulse{animation:obPulse 2s ease-out 3}
+/* "or search" divider */
+.ob-divider{display:flex;align-items:center;gap:10px;color:rgba(255,255,255,.25);font-size:12px;font-weight:600;width:100%}
+.ob-divider::before,.ob-divider::after{content:'';flex:1;height:.5px;background:rgba(255,255,255,.12)}
+/* Search field */
+.ob-search-row{position:relative;width:100%}
+.ob-search-input{width:100%;background:rgba(255,255,255,.07);border:.5px solid rgba(0,133,202,.4);border-radius:12px;color:#fff;font-size:16px;padding:13px 14px;font-family:var(--font);outline:none;-webkit-appearance:none;box-sizing:border-box;transition:border-color .15s}
+.ob-search-input:focus{border-color:rgba(0,133,202,.75)}
+.ob-search-input::placeholder{color:rgba(255,255,255,.28)}
+/* Search results dropdown */
+.ob-search-drop{display:none;position:absolute;left:0;right:0;top:calc(100% + 5px);background:#0a1628;border:.5px solid rgba(0,133,202,.5);border-radius:12px;z-index:10;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.7);max-height:220px;overflow-y:auto}
+/* "Skip" ghost link */
+.ob-skip{background:none;border:none;color:rgba(255,255,255,.3);font-size:13px;font-family:var(--font);cursor:pointer;padding:8px 0;text-align:center;width:100%}
+.ob-skip:active{color:rgba(255,255,255,.55)}
+/* Step indicator dots */
+.ob-dots{display:flex;gap:8px;margin-top:30px}
+.ob-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.18);transition:width .2s,background .2s}
+.ob-dot.ob-dot-active{width:18px;border-radius:3px;background:var(--noaa-sky)}
+
+
+/* ── Extended forecast screen (s-forecast) ──────────────────────────────────*/
+.ext-list{padding:8px 12px 12px}
+.ext-period{background:var(--card);border-radius:12px;padding:12px 13px;margin-bottom:8px;border:.5px solid rgba(0,133,202,.3)}
+/* ── Forecast Details section rhythm ─────────────────────────────────────────
+   Match the Weather tab: 10px under the search bar, 10px between every section,
+   12px side inset. Each .ext-list used to pad itself 8px top / 12px bottom on top
+   of its cards' own 8px margin, so the gaps came out 8, 20, 32 or 44px depending
+   on which lists sat next to each other — and the long-range and climate boxes
+   (whose own padding overrides the list's) had no gap between them at all.
+   Now the lists carry only the side inset and every section owns a 10px bottom
+   margin, so adjacent sections always sum to 10. */
+#forecast-ext-body > .ext-list{padding:0 12px}
+#forecast-ext-body > .ext-list:first-child{padding-top:10px}
+#forecast-ext-body .ext-period{margin-bottom:10px}
+/* Hourly: the first card sat flush under the search bar. */
+#hourly-body{padding-top:10px}
+.ext-night{border-color:rgba(90,130,200,.25)}
+.ext-header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.ext-name-col{flex:1;min-width:0}
+.ext-name{font-size:12px;font-weight:600;color:#fff;display:flex;align-items:center;gap:4px}
+.ext-short{font-size:11px;color:rgba(255,255,255,.72);display:block;margin-top:1px}
+.ext-meta{display:flex;gap:10px;margin-top:3px}
+.ext-wind,.ext-precip{font-size:10px;color:rgba(255,255,255,.55)}
+.ext-img{width:44px;height:44px;object-fit:contain;flex-shrink:0}
+.ext-fb{font-size:40px;line-height:1;flex-shrink:0}
+.ext-temp{font-size:22px;font-weight:300;letter-spacing:-1px;color:#fff;flex-shrink:0;min-width:40px;text-align:right}
+.ext-detail{font-size:12px;color:rgba(255,255,255,.78);line-height:1.5;border-top:.5px solid rgba(255,255,255,.08);padding-top:8px}
+
+/* ── Data sources collapsible (item 9) ───────────────────────────────────────
+   Data sources always shown. */
+/* Precipitation nowcast strip, between the metric tiles and the alert banner.
+   Quiet by default and slightly louder while it is actually precipitating, so
+   it reads as information rather than as a second alert — the red banner below
+   it is the only thing on this screen allowed to look urgent. */
+.nowcast{display:flex;align-items:center;gap:8px;margin:0 12px 10px;padding:8px 12px;
+  border-radius:9px;background:rgba(0,133,202,.12);border:.5px solid rgba(0,133,202,.3)}
+.nowcast-now{background:rgba(0,133,202,.22);border-color:rgba(0,133,202,.5)}
+.nowcast-dot{width:7px;height:7px;border-radius:50%;background:#5AC8FA;flex-shrink:0}
+.nowcast-txt{flex:1;min-width:0;font-size:13px;font-weight:600;color:rgba(255,255,255,.9)}
+.nowcast-src{font-size:8.5px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.42);
+  white-space:nowrap}
+/* Feedback ask on the Weather screen. Deliberately the quietest card on the
+   page — no accent fill, no icon — since it asks for something rather than
+   showing weather. */
+.fbk-card{padding:12px 13px}
+.fbk-title{font-size:14px;font-weight:600;color:rgba(255,255,255,.92);margin-bottom:4px}
+.fbk-text{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.62);margin:0 0 11px}
+.fbk-actions{display:flex;gap:8px;flex-wrap:wrap}
+.fbk-actions+.fbk-actions{margin-top:8px}
+.fbk-addr{color:#5AC8FA;font-weight:600;word-break:break-all;-webkit-user-select:text;user-select:text}
+/* Off-screen sink for the execCommand copy fallback. */
+.fbk-copy-sink{position:absolute;left:-9999px;opacity:0}
+.fbk-btn{flex:1;min-width:120px;padding:9px 12px;border-radius:9px;font-family:var(--font);
+  font-size:13px;font-weight:600;cursor:pointer;color:#fff;
+  background:rgba(0,133,202,.32);border:.5px solid rgba(0,133,202,.55);
+  -webkit-tap-highlight-color:transparent}
+.fbk-btn:active{opacity:.6}
+.fbk-btn-alt{background:none;border-color:rgba(255,255,255,.16);color:rgba(255,255,255,.6);font-weight:500}
+.upd-pop{position:absolute;inset:0;z-index:998;display:none}
+.upd-pop.show{display:block}
+.upd-pop-scrim{position:absolute;inset:0;background:rgba(0,8,20,.55);animation:updFade .25s ease-out}
+.upd-pop-card{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 56px);transform:translateX(-50%);
+  width:min(366px,calc(100% - 32px));padding:16px 15px 15px;border-radius:16px;
+  background:rgba(0,18,45,.97);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border:.5px solid rgba(0,133,202,.45);box-shadow:0 18px 50px rgba(0,0,0,.5);
+  animation:updDrop .34s cubic-bezier(.34,1.3,.64,1)}
+@keyframes updFade{from{opacity:0}to{opacity:1}}
+@keyframes updDrop{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (prefers-reduced-motion:reduce){.upd-pop-scrim,.upd-pop-card{animation:none}}
+.upd-notes{list-style:none;margin:-4px 0 11px;padding:0}
+.upd-notes li{position:relative;padding-left:12px;font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.62);margin:2px 0}
+.upd-notes li::before{content:"";position:absolute;left:1px;top:.62em;width:4px;height:4px;border-radius:50%;background:#5AC8FA}
+.obs-details{margin:0 12px 2px}
+.obs-summary{font-size:9px;color:rgba(0,180,230,.75);padding:1px 0;margin-bottom:1px}
+
+/* ── AFD collapsed by default (item 16) ─────────────────────────────────────
+   Shows ~5 lines of the forecast discussion with a gradient fade and a
+   "Read full discussion ›" button that expands inline. */
+/* 18em ≈ 11 lines of the discussion at its 11px/1.65 type, up from 8em (~5
+   lines) — enough to read the opening synopsis without tapping expand.
+   Shared by the Weather and Details AFDs and the Air Quality discussion. */
+.afd-collapsed{max-height:18em;overflow:hidden;position:relative;transition:max-height .45s ease}
+.afd-collapsed:not(.afd-open){cursor:pointer}
+/* Capped at 60vh (not a huge fixed px value) so the expanded box never fills
+   the whole screen — the section header above and the collapse button below
+   stay on-screen, giving the user a way to scroll the page without first
+   scrolling through the entire AFD text. */
+.afd-collapsed.afd-open{max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.afd-collapsed:not(.afd-open)::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3em;background:linear-gradient(transparent,rgba(0,12,28,.95));pointer-events:none}
+.afd-expand-btn{display:block;width:100%;background:none;border:none;outline:none;color:rgba(0,180,230,.6);font-size:10px;font-weight:800;font-family:var(--font);cursor:pointer;padding:7px 0 2px;text-align:left;-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent}
+.afd-expand-btn:active{color:#5AC8FA}
+
+/* ── Onboarding step 3 (morning briefing) ────────────────────────────────────
+   Third panel added to the onboarding flow after notifications. */
+#ob-step3{display:none;flex-direction:column;align-items:center;width:100%}
+#ob-step3.ob-active{display:flex}
+.ob-briefing-row{display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;color:rgba(255,255,255,.65);width:100%}
+.ob-briefing-row select{font-size:15px}
+
+/* ── Tappable header location (item 12) ─────────────────────────────────────
+   The _s-e35ffc / _s-20ce63 wrappers are now <button> elements so the user
+   can tap the city name to switch locations. Reset browser button defaults and
+   add a "›" chevron to signal the interaction. */
+.hdr-loc-btn{background:none;border:none;outline:none;color:inherit;font-family:var(--font);cursor:pointer;padding:0;text-align:right;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;user-select:none}
+.hdr-loc-btn:focus{outline:none}
+.hdr-loc-btn:active{opacity:.7}
+/* Sub-screen back chevron — per Apple HIG: "< Parent Title" in top-left */
+.hdr-back-btn{background:none;border:none;outline:none;color:#5AC8FA;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;padding:0;flex-shrink:0;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;user-select:none;letter-spacing:-.1px}
+.hdr-back-btn:active{opacity:.6}
+
+/* ── Card "See all" / "Details" navigation links (item 11) ─────────────────
+   Floated right inside the card label row so they don't push the label text. */
+.clbl-more{margin-left:auto;background:none;border:none;outline:none;color:rgba(0,180,230,.75);font-size:10px;font-weight:800;font-family:var(--font);cursor:pointer;padding:0 2px;letter-spacing:.2px;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;flex-shrink:0}
+.clbl-more:focus{outline:none}
+.clbl-more:active{color:#5AC8FA}
+.clbl-chev{font-size:19px;font-weight:700;display:inline-block;vertical-align:-2px}
+/* Card headers that navigate to their own screen. Negative margins keep the
+   text where it was while widening the tap target to the full card width. */
+.clbl-link{cursor:pointer;-webkit-tap-highlight-color:transparent;
+  margin:-6px -6px 4px;padding:6px;border-radius:8px}
+.clbl-link:active{background:rgba(0,133,202,.14)}
+
+/* ── Weather hero share button (item 8) ─────────────────────────────────────
+   Sits next to the location name inside .hero-loc. Transparent background,
+   icon-only, tight hit target. */
+.hero-share-btn{background:none;border:none;outline:none;color:rgba(255,255,255,.45);cursor:pointer;padding:2px 4px;line-height:0;flex-shrink:0;-webkit-tap-highlight-color:transparent;-webkit-appearance:none;appearance:none;transition:color .15s}
+.hero-share-btn:focus{outline:none}
+.hero-share-btn:active{color:rgba(255,255,255,.9)}
+
+/* ── Alerts screen: clear / no-alerts empty state ───────────────────────────
+   Replaces the old faint icon + "No active NWS alerts" null state with a
+   positive, branded moment that confirms the user is safe. */
+.alerts-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 28px 40px;text-align:center}
+/* Green ring with check — large enough to register as a positive signal */
+.alerts-empty-icon{width:72px;height:72px;border-radius:50%;background:rgba(52,199,89,.12);border:1.5px solid rgba(52,199,89,.38);display:flex;align-items:center;justify-content:center;color:#34C759;margin-bottom:22px;flex-shrink:0}
+.alerts-empty-title{font-size:21px;font-weight:700;color:#fff;margin-bottom:9px;letter-spacing:-.25px}
+.alerts-empty-sub{font-size:14px;color:rgba(255,255,255,.48);line-height:1.65;max-width:260px}
+
+/* ── API unavailability notice ───────────────────────────────────────────────
+   Shown in place of data when a non-critical API endpoint returns an error
+   (e.g. NWS forecast/hourly returning 500). Keeps the card visible but makes
+   clear the absence is a source issue, not missing data. */
+.api-unavailable-msg{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 10px;font-size:11px;color:rgba(255,255,255,.35);font-style:italic;text-align:center;line-height:1.5}
+
+/* ── Day-row expand chevron (item 37) ────────────────────────────────────────
+   Sits at the end of every .drow in the 8-day card. Right-pointing by default
+   (collapsed); rotates 90° to point down when the detail is open. */
+.drow-day-ico{opacity:.55;vertical-align:middle}
+.drow-night-ico{opacity:.35;vertical-align:middle}
+.dchev{font-size:23px;font-weight:700;color:rgba(255,255,255,.45);flex-shrink:0;transition:transform .2s ease,color .15s;display:inline-block;padding-left:4px;line-height:1}
+.dchev.open{transform:rotate(90deg);color:rgba(255,255,255,.7)}
+/* Smooth fade-in for the expanded detail text */
+@keyframes dDetailFade{from{opacity:0}to{opacity:1}}
+
+/* ── Developer section (item 36) ─────────────────────────────────────────────
+   <details> wraps the test-notification buttons so they are hidden from
+   regular users but one tap away for developers. */
+.dev-details{list-style:none}
+.dev-details summary::-webkit-details-marker{display:none}
+.dev-details::marker{display:none}
+.dev-summary{font-size:10px;font-weight:800;color:rgba(0,180,230,.55);text-transform:uppercase;letter-spacing:.65px;padding:0 14px;cursor:pointer;display:flex;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent;user-select:none}
+.dev-summary:active{color:rgba(0,180,230,.85)}
+.dev-body{display:flex;flex-direction:column;gap:8px;padding-top:10px}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   iPad / tablet layout — Option B, Phase 1
+   ──────────────────────────────────────────────────────────────────────────
+   EVERYTHING here is gated behind min-width:744px. 744px is iPad mini portrait,
+   the narrowest full-screen iPad width, so the iPhone experience is untouched:
+   real iPhones (≤600px device width) and the in-browser 390px phone mockup
+   (601–743px) never match this query. Narrower iPad multitasking widths
+   (Slide Over, ⅓ Split View) intentionally fall back to the phone column too —
+   the phone layout is the right fit at those sizes.
+
+   What changes on iPad:
+   • the app fills the screen instead of a centered 390px strip
+   • the bottom tab bar becomes a fixed left sidebar rail
+   • text content is capped to a readable column width and centered
+   The flex-column structure of each screen is left intact — the rail is layered
+   on with absolute positioning so the scroller keeps flexing exactly as before.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (min-width:744px){
+  :root{ --rail:96px; --content-max:820px; }
+
+  html,body{ background:#001422; }
+
+  /* Fill the whole iPad rather than the centered phone column. */
+  .phone{ width:100%; max-width:none; }
+
+  /* Make each screen the positioning context for its own rail and reserve the
+     gutter on the left. env(safe-area-inset-left) clears the notch/corner in
+     landscape. */
+  .screen{ position:relative; padding-left:calc(var(--rail) + env(safe-area-inset-left,0px)); }
+
+  /* Bottom tab bar → left sidebar rail. Each screen owns its own .bnav and only
+     the active screen is displayed, so exactly one rail is ever visible. It is
+     absolutely positioned inside the screen, so header/status/scroller keep
+     their normal vertical flex flow in the remaining space. */
+  .bnav{
+    position:absolute; top:0; bottom:0; left:0;
+    width:calc(var(--rail) + env(safe-area-inset-left,0px));
+    flex-direction:column; justify-content:flex-start; align-items:stretch;
+    gap:4px;
+    padding:calc(14px + env(safe-area-inset-top,0px)) 8px
+            calc(14px + env(safe-area-inset-bottom,0px))
+            calc(8px + env(safe-area-inset-left,0px));
+    border-top:none; border-right:2px solid var(--noaa-sky);
+    overflow-y:auto; scrollbar-width:none; z-index:20;
+  }
+  .bnav::-webkit-scrollbar{ display:none; }
+
+  .nbtn{ width:100%; min-width:0; padding:11px 4px; border-radius:11px; gap:4px; }
+  .nbtn.active{ background:rgba(0,133,202,.16); }
+
+  /* Cap text content to a readable column and center it in the space beside the
+     rail. flex column → the cross axis is horizontal, so align-self:center
+     centers these horizontally. The map screen uses #map-wrap (not .scroller),
+     so it is deliberately excluded and the map fills the full width. */
+  #s-wx .hz,
+  .scroller,
+  #hourly-body{
+    align-self:center;
+    width:100%;
+    max-width:var(--content-max);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   iPad / tablet layout — Option B, Phase 2: two-column dashboard
+   ──────────────────────────────────────────────────────────────────────────
+   Gated behind min-width:1024px (full-screen large iPads + every iPad in
+   landscape). Portrait iPad mini/regular stay on the Phase-1 single column,
+   and the iPhone layout (<744px) is, as before, completely untouched.
+
+   On wide screens the centered single column leaves big empty margins, so we
+   widen the readable cap and flow the *self-contained* card stacks into two
+   balanced columns with CSS multicolumn. break-inside:avoid keeps every card or
+   row intact across the column gap, and inline-expanding content (8-day rows,
+   alert accordions) simply makes its column taller — so this needs zero DOM or
+   JS changes. Only screens that are pure card stacks get two columns; the map,
+   settings, locations, and the marine/recent-alerts sub-sections stay single.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (min-width:1024px){
+  /* Widen the Phase-1 readable caps to use the extra width. The alerts screen
+     is deliberately left at the Phase-1 readable cap — alert bodies are long
+     prose that reads better in one narrower column. */
+  #s-wx .hz{ max-width:1180px; }
+  #s-forecast .scroller{ max-width:1180px; }
+  #hourly-body{ max-width:1180px; }
+
+  /* Main weather screen → two-column dashboard. Its children are independent
+     blocks (hero, metrics, hourly/8-day/discussion cards), so they balance
+     across two columns cleanly; break-inside:avoid keeps each card whole. */
+  #wx-body{ column-count:2; column-gap:16px; }
+  #wx-body > *{ break-inside:avoid; }
+  /* A severe-weather banner stays full width across the top of the dashboard
+     rather than getting boxed into one column. */
+  #wx-body > .abanner{ column-span:all; }
+
+  /* The multicolumn split puts .wx-top (hero + 2x2 tiles, ~150px) in the left
+     column and .detg in the right, where its single row of four was ~63px — a
+     100px hole under the tiles before the banner, against 13px on the left.
+     Laying .detg out 2x2 at the same height, with the same top padding and
+     bottom gap, makes the two columns end level. 176px = the 10px top padding +
+     the hero with its roundup link (166px), the tallest the left column gets. */
+  .wx-top{ min-height:176px; margin-bottom:10px; }
+  .detg{ grid-template-columns:repeat(2,1fr); grid-auto-rows:1fr;
+         min-height:176px; padding-top:10px; }
+
+  /* Extended-forecast screen → flow the period rows into two balanced columns.
+     We multicolumn the period list itself (not the whole body) and keep each
+     period row intact, so the 14 periods split 7/7 instead of dumping the whole
+     list into one column. The Snow Level and Discussion blocks that follow stay
+     full width below. */
+  #forecast-ext-body > .ext-list:first-child{ column-count:2; column-gap:16px; }
+  #forecast-ext-body > .ext-list:first-child > .ext-period{ break-inside:avoid; }
+  /* A column break truncates the left column's last bottom margin but the right
+     column keeps its own, so the list ended on the right column's margin and the
+     next section sat 8px under the taller left column. Space the list from its
+     own padding instead, measured from whichever column is taller. */
+  #forecast-ext-body > .ext-list:first-child{ padding-bottom:10px; }
+  #forecast-ext-body > .ext-list:first-child > .ext-period:last-child{ margin-bottom:0; }
+
+  /* Long-range outlook + climate: side by side on the period list's two-column
+     grid, rather than one 904px-wide box each whose rows put the day, condition
+     and temperatures hundreds of pixels apart. Every other child keeps the full
+     width. Column geometry mirrors the list above: 12px outer inset, 16px gap. */
+  #forecast-ext-body{ display:grid; grid-template-columns:1fr 1fr; column-gap:16px;
+                      align-items:start; }
+  #forecast-ext-body > *{ grid-column:1 / -1; }
+  #forecast-ext-body > #lrf-section{ grid-column:1; }
+  #forecast-ext-body > #clim-section{ grid-column:2; }
+  #lrf-section  > .lrf-list { margin-right:0; }
+  #clim-section > .clim-list{ margin-left:0; }
+  /* Only one of the two has data (climate needs a nearby CLI station; the outlook
+     needs Open-Meteo): let it take the full width instead of half a row. */
+  #forecast-ext-body > #lrf-section:has(+ #clim-section:empty),
+  #forecast-ext-body > #lrf-section:empty + #clim-section{ grid-column:1 / -1; }
+  #lrf-section:has(+ #clim-section:empty) > .lrf-list{ margin-right:12px; }
+  #lrf-section:empty + #clim-section > .clim-list{ margin-left:12px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   iPad / tablet layout — Option B, Phase 3: map + forecast master-detail
+   ──────────────────────────────────────────────────────────────────────────
+   On wide landscape iPads the Map screen becomes a two-pane master-detail: the
+   Leaflet map (master) fills the main area and a forecast pane (detail) docks on
+   the right, populated from the same wxData the Weather screen uses.
+
+   The wrapper #map-split is display:contents at every other size, so on phones
+   and portrait iPads #map-wrap remains the screen's flex child exactly as before
+   and the forecast pane never renders — the iPhone map screen is untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+#map-split{ display:contents; }
+#map-detail-pane{ display:none; }
+
+@media (min-width:1024px) and (orientation:landscape){
+  /* Split the map area into map (flex) + docked forecast pane. */
+  #map-split{ display:flex; flex:1; min-height:0; }
+  #map-wrap{ flex:1 1 0; min-width:0; width:auto; }
+  #map-detail-pane{
+    display:flex; flex-direction:column; flex-shrink:0;
+    width:340px;
+    background:var(--noaa-dark);
+    border-left:2px solid var(--noaa-sky);
+    overflow-y:auto; scrollbar-width:none;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));
+  }
+  #map-detail-pane::-webkit-scrollbar{ display:none; }
+
+  /* Current conditions block */
+  .mdp-now{ padding-bottom:11px; border-bottom:.5px solid var(--sep); margin-bottom:10px; }
+  .mdp-loc{ font-size:15px; font-weight:700; color:#fff; }
+  .mdp-templine{ display:flex; align-items:center; gap:6px; }
+  .mdp-temp{ font-size:46px; font-weight:200; color:#fff; line-height:1.1; }
+  .mdp-now-img,.mdp-now-fb{ width:40px; height:40px; font-size:32px; }
+  .mdp-cond{ font-size:13px; color:rgba(255,255,255,.82); }
+  .mdp-hilo{ font-size:12px; color:rgba(255,255,255,.55); margin-top:2px; }
+
+  /* Forecast list */
+  .mdp-hd{ font-size:10px; font-weight:800; letter-spacing:.6px; color:var(--noaa-sky); margin-bottom:2px; }
+  .mdp-row{ display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:.5px solid var(--sep); }
+  .mdp-row:last-child{ border-bottom:none; }
+  .mdp-night{ opacity:.72; }
+  .mdp-rlabel{ flex:1; min-width:0; font-size:13px; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mdp-rimg,.mdp-rfb{ width:24px; height:24px; font-size:18px; flex-shrink:0; }
+  .mdp-rtemp{ font-size:14px; font-weight:700; color:#fff; min-width:34px; text-align:right; }
+  .mdp-more{ margin-top:12px; background:var(--noaa-blue); border:none; border-radius:9px; padding:9px; color:#fff; font-size:13px; font-weight:600; font-family:var(--font); cursor:pointer; }
+}
+
+/* ── Tile detail screens: shared primitives (dv-*) ───────────────────────────
+   The `dv-` ("detail view") classes below are shared by every screen reached
+   from a metric tile — s-air and s-uv today. Screen-specific pieces keep their
+   own prefix (aq-* for air quality, uv-* for UV index).
+
+   Category colours are applied from JS via data-css-* (strict CSP — no inline
+   style attributes), so everything colour-driven here deliberately has no
+   colour of its own. */
+
+/* Tappable metric tile — only tiles that drill down get this, so the
+   affordance is a chevron on the label row rather than a whole-tile treatment
+   that would imply the remaining tiles are dead. */
+.detc-tap{cursor:pointer;transition:border-color .15s,background .15s}
+.detc-tap:active{border-color:rgba(0,180,230,.55);background:rgba(0,75,145,.62)}
+.detc-chev{margin-left:auto;font-size:15px;font-weight:700;line-height:1;color:rgba(0,180,230,.55)}
+
+/* Small provenance chip in a card header (AIRNOW / agency name / MODELED) */
+.dv-tag{margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.4px;color:rgba(255,255,255,.38);
+  border:.5px solid rgba(255,255,255,.16);border-radius:4px;padding:2px 5px;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52%;flex-shrink:1}
+
+/* Hero: current AQI */
+.dv-now{display:flex;align-items:center;gap:14px}
+.dv-val{font-size:52px;font-weight:200;line-height:1;letter-spacing:-1.5px;min-width:78px}
+.dv-now-txt{min-width:0}
+.dv-cat{font-size:17px;font-weight:700;line-height:1.2}
+.dv-now-sub{font-size:11px;color:rgba(255,255,255,.5);margin-top:3px}
+
+/* 0–500 scale. The six category bands are drawn as equal blocks and the dot is
+   positioned band-relative by _aqiScalePct() — see the note there. */
+.aq-scale{height:6px;border-radius:4px;position:relative;margin:14px 0 5px;background:linear-gradient(90deg,
+  #34C759 0 16.667%,#FFD60A 16.667% 33.333%,#FF9F0A 33.333% 50%,
+  #FF453A 50% 66.667%,#BF5AF2 66.667% 83.333%,#8B0000 83.333% 100%)}
+.dv-dot{width:11px;height:11px;background:#fff;border-radius:50%;position:absolute;top:-2.5px;
+  transform:translateX(-50%);box-shadow:0 0 0 2px rgba(0,20,45,.85)}
+.dv-ticks{display:flex;justify-content:space-between;font-size:8px;color:rgba(255,255,255,.3);
+  font-variant-numeric:tabular-nums}
+.dv-where{font-size:10px;color:rgba(255,255,255,.42);margin-top:9px;padding-top:8px;
+  border-top:.5px solid var(--sep);line-height:1.5}
+
+/* Action Day banner — sits above the hero, styled like an advisory. */
+.aq-action{display:flex;gap:9px;align-items:flex-start;margin:0 12px 10px;padding:11px 12px;
+  border-radius:12px;background:rgba(232,119,34,.14);border:.5px solid rgba(232,119,34,.45);
+  font-size:12px;line-height:1.5;color:rgba(255,255,255,.88)}
+.aq-action-ico{flex-shrink:0;font-size:14px;line-height:1.3}
+.aq-action strong{color:var(--noaa-orange)}
+
+/* EPA health guidance for the category in effect */
+.dv-advice{position:relative;font-size:13px;line-height:1.6;color:rgba(255,255,255,.85);padding-left:12px}
+.dv-advice-bar{position:absolute;left:0;top:2px;bottom:2px;width:3px;border-radius:2px}
+
+/* Per-pollutant rows */
+.aq-prow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:.5px solid var(--sep)}
+.aq-prow:last-child{border-bottom:none;padding-bottom:0}
+.aq-pname{flex:1;min-width:0}
+.aq-pn{display:block;font-size:13px;font-weight:600;color:#fff}
+.aq-psub{display:block;font-size:9.5px;color:rgba(255,255,255,.4);margin-top:2px}
+.aq-pri{margin-left:6px;font-size:8px;font-weight:800;letter-spacing:.5px;color:var(--noaa-sky);
+  border:.5px solid rgba(0,180,230,.45);border-radius:3px;padding:1px 3px;vertical-align:1px}
+.aq-ptrack{width:48px;height:4px;border-radius:3px;background:rgba(255,255,255,.1);flex-shrink:0;overflow:hidden}
+.aq-pbar{height:100%;border-radius:3px;min-width:2px}
+/* Category name repeated as text beside the number — the AQI palette alone
+   can't carry the reading for colour-blind users, and EPA's maroon "Hazardous"
+   is genuinely hard to tell from red on a dark card. */
+.aq-pval{display:flex;flex-direction:column;align-items:flex-end;min-width:60px;flex-shrink:0}
+.aq-paqi{font-size:17px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.aq-pcat{font-size:9px;color:rgba(255,255,255,.42);margin-top:2px;white-space:nowrap}
+
+/* Multi-day forecast rows */
+.aq-frow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:.5px solid var(--sep)}
+.aq-frow:last-of-type{border-bottom:none}
+.aq-fdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.aq-fday{font-size:12.5px;font-weight:600;color:#fff;width:60px;flex-shrink:0}
+.aq-fparam{font-size:9px;font-weight:700;color:rgba(255,255,255,.42);width:38px;flex-shrink:0;letter-spacing:.2px}
+.aq-fcat{flex:1;min-width:0;font-size:11px;color:rgba(255,255,255,.62);line-height:1.35}
+.aq-faqi{font-size:16px;font-weight:600;min-width:30px;text-align:right;flex-shrink:0;
+  font-variant-numeric:tabular-nums}
+.aq-fnote{font-size:9.5px;color:rgba(255,255,255,.3);line-height:1.5;margin-top:9px;
+  padding-top:8px;border-top:.5px solid var(--sep)}
+
+/* Forecaster's discussion — reuses the AFD collapse/expand behaviour. The
+   inherited fade-out is tuned for the darker --card2 panel the NWS discussion
+   sits in; re-point it at the blended colour of .card over the app background
+   so the collapsed text fades into the card instead of a grey band. */
+.aq-disc{font-size:12.5px;line-height:1.65;color:rgba(255,255,255,.78);white-space:pre-wrap}
+.aq-disc.afd-collapsed:not(.afd-open)::after{background:linear-gradient(transparent,rgb(0,39,76))}
+
+.dv-source{padding:2px 16px 26px;font-size:9.5px;color:rgba(255,255,255,.24);line-height:1.7}
+
+/* ── UV Index screen (s-uv) ──────────────────────────────────────────────────
+   Detail view behind the UV INDEX tile, rendered from EPA Envirofacts' hourly
+   series. Shares the dv-* hero/advice primitives above; only the 0–11+ scale,
+   the day curve and the protection window are UV-specific. */
+
+/* Same five-stop gradient the .uvbar tile draws, so tile and screen read as
+   one scale. Unlike the AQI scale these bands are evenly spaced in value
+   (0–2 / 3–5 / 6–7 / 8–10 / 11+ over a 0–11 axis), so stops are proportional. */
+.uv-scale{height:6px;border-radius:4px;position:relative;margin:14px 0 5px;background:linear-gradient(90deg,
+  #44BB44 0 18.2%,#FFDD00 18.2% 45.5%,#FF8800 45.5% 63.6%,#FF3B30 63.6% 90.9%,#9B2BA5 90.9% 100%)}
+
+/* Day curve. Bar heights are set from JS (data-css-height) against the day's
+   own peak, so a low-UV winter day still has a readable shape. */
+.uv-chart{display:flex;align-items:flex-end;gap:3px;height:104px;margin-top:4px}
+.uv-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px}
+.uv-bar{width:100%;border-radius:3px 3px 0 0;min-height:2px}
+.uv-num{font-size:8.5px;color:rgba(255,255,255,.6);font-weight:600;font-variant-numeric:tabular-nums}
+.uv-hr{font-size:8px;color:rgba(255,255,255,.32);margin-top:4px;white-space:nowrap}
+.uv-col.peak .uv-num{color:#fff;font-weight:800}
+.uv-col.now .uv-hr{color:#5AC8FA;font-weight:800}
+.uv-lag{font-size:9.5px;color:rgba(255,255,255,.3);line-height:1.5;margin-top:9px;
+  padding-top:8px;border-top:.5px solid var(--sep)}
+
+/* Sun protection window */
+.uv-win{display:flex;align-items:center;gap:12px}
+.uv-win-time{font-size:19px;font-weight:600;color:#fff;white-space:nowrap}
+.uv-win-sub{font-size:11px;color:rgba(255,255,255,.5);line-height:1.5}
+.uv-win-track{height:6px;border-radius:4px;background:rgba(255,255,255,.1);margin-top:11px;position:relative;overflow:hidden}
+.uv-win-fill{position:absolute;top:0;bottom:0;border-radius:4px;
+  background:linear-gradient(90deg,#FFDD00,#FF8800,#FF3B30,#FF8800)}
+.uv-win-ends{display:flex;justify-content:space-between;font-size:8px;color:rgba(255,255,255,.3);margin-top:4px}
+.uv-none{font-size:12.5px;line-height:1.6;color:rgba(255,255,255,.72)}
+
+/* Protection steps + burn-time caveat */
+.uv-steps{display:flex;flex-direction:column;gap:7px;margin-top:11px;padding-top:10px;border-top:.5px solid var(--sep)}
+.uv-step{display:flex;gap:8px;font-size:12px;color:rgba(255,255,255,.72);line-height:1.45}
+.uv-step span:first-child{flex-shrink:0;opacity:.85}
+.uv-burn{font-size:10.5px;color:rgba(255,255,255,.42);margin-top:11px;padding-top:9px;
+  border-top:.5px solid var(--sep);line-height:1.55}
+
+/* ── Storm Center (js/spc.js) ──────────────────────────────────────────────── */
+
+/* Entry card on the Weather screen, under the Area Forecast Discussion. */
+.sc-entry{display:flex;align-items:center;gap:10px;width:calc(100% - 24px);text-align:left;
+  font-family:var(--font);cursor:pointer;-webkit-appearance:none;appearance:none;
+  -webkit-tap-highlight-color:transparent}
+.sc-entry:active{background:rgba(0,133,202,.22)}
+.sc-entry-txt{flex:1;min-width:0}
+.sc-entry-title{font-size:10px;font-weight:700;color:rgba(0,180,230,.8);text-transform:uppercase;
+  letter-spacing:.6px;line-height:1;margin-bottom:5px}
+.sc-entry-sub{font-size:12px;color:rgba(255,255,255,.62);line-height:1.4}
+.sc-entry-chev{color:rgba(0,180,230,.75);flex-shrink:0}
+
+/* Tab bar + day/filter segments */
+.spc-tabs{display:flex;gap:5px;padding:10px 12px 2px;overflow-x:auto;scrollbar-width:none}
+.spc-tabs::-webkit-scrollbar{display:none}
+.spc-dayrow,.spc-filter{display:flex;gap:6px;padding:8px 12px 2px}
+.spc-prod-row{padding:8px 12px 2px}
+
+.spc-card{padding:13px}
+.spc-clbl-tag{margin-left:auto;font-size:9px;color:rgba(255,255,255,.35);letter-spacing:.4px}
+.spc-age{margin-left:auto;font-size:9px;font-weight:600;color:rgba(255,255,255,.35);
+  letter-spacing:.3px;text-transform:none;flex-shrink:0}
+
+/* Categorical risk banner — SPC's own palette. */
+.spc-risk{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:9px;
+  background:rgba(0,40,90,.5);border:.5px solid rgba(255,255,255,.08);margin-bottom:10px}
+.spc-risk-dot{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+.spc-risk-lbl{font-size:14px;font-weight:800;color:#fff;letter-spacing:.2px}
+.spc-risk-valid{margin-left:auto;font-size:9px;color:rgba(255,255,255,.4);white-space:nowrap}
+.risk-none  .spc-risk-dot{background:#5B6B7C}
+.risk-tstm  .spc-risk-dot{background:#C1E9C1}
+.risk-mrgl  .spc-risk-dot{background:#66A366}
+.risk-slgt  .spc-risk-dot{background:#FFE066}
+.risk-enh   .spc-risk-dot{background:#FFA366}
+.risk-mdt   .spc-risk-dot{background:#E06666}
+.risk-high  .spc-risk-dot{background:#EE99EE}
+.risk-slgt{border-color:rgba(255,224,102,.35)}
+.risk-enh {border-color:rgba(255,163,102,.45);background:rgba(90,45,0,.35)}
+.risk-mdt {border-color:rgba(224,102,102,.5);background:rgba(90,15,15,.4)}
+.risk-high{border-color:rgba(238,153,238,.55);background:rgba(70,10,70,.4)}
+
+.spc-summary{font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.78);margin-bottom:9px}
+
+/* Thunder probability at the user's own gridpoint, under the risk banner. */
+.spc-pot{background:rgba(0,40,90,.4);border:.5px solid rgba(0,133,202,.22);border-radius:9px;
+  padding:10px 11px 8px;margin-bottom:10px}
+.spc-pot-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.spc-pot-lbl{font-size:9px;font-weight:700;color:rgba(0,180,230,.8);text-transform:uppercase;letter-spacing:.6px}
+.spc-pot-now{margin-left:auto;font-size:17px;font-weight:800;color:#fff;line-height:1}
+.spc-pot-unit{font-size:9px;font-weight:600;color:rgba(255,255,255,.4);margin-left:4px;letter-spacing:.3px}
+.pot-chart{display:flex;align-items:flex-end;gap:3px;height:66px}
+.pot-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-width:0}
+.pot-num{font-size:8.5px;font-weight:700;color:rgba(255,255,255,.4);line-height:1}
+.pot-bar{width:100%;max-width:16px;border-radius:3px 3px 0 0;background:rgba(0,133,202,.45)}
+.pot-hr{font-size:8px;color:rgba(255,255,255,.3);white-space:nowrap;line-height:1}
+.pot-col.peak .pot-bar{background:#FF9500}
+.pot-col.peak .pot-num{color:#FF9500}
+.pot-col.now .pot-hr{color:#5AC8FA;font-weight:700}
+.spc-pot-cap{font-size:9.5px;color:rgba(255,255,255,.35);line-height:1.5;margin-top:8px}
+
+/* Raw product text — monospace so NWS's fixed-width tables line up. */
+.spc-prose{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.55;
+  color:rgba(255,255,255,.72);white-space:pre-wrap;word-break:break-word;
+  max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.spc-clamp{max-height:14em;overflow:hidden;position:relative}
+.spc-clamp::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3em;
+  background:linear-gradient(transparent,rgba(0,12,28,.95));pointer-events:none}
+.spc-prose-ldg{color:rgba(255,255,255,.4)}
+/* Tabular products (CLI climate tables) keep their columns and scroll sideways
+   rather than wrapping into unreadable fragments. */
+.spc-prose-wide{white-space:pre;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.spc-meta{font-size:9px;color:rgba(255,255,255,.3);margin-top:8px;display:flex;align-items:center;gap:5px}
+
+/* Mesoscale discussion cards */
+.spc-md-near{border-color:rgba(255,149,0,.55);background:rgba(60,30,0,.35)}
+.spc-near-badge{font-size:8.5px;font-weight:800;letter-spacing:.5px;color:#000;background:#FF9500;
+  border-radius:4px;padding:2px 5px;flex-shrink:0}
+.spc-md-areas{font-size:13px;font-weight:600;color:#fff;line-height:1.4;margin-bottom:5px}
+.spc-md-concerning{font-size:11.5px;color:rgba(0,180,230,.85);line-height:1.45;margin-bottom:7px}
+.spc-watchprob{font-size:11.5px;color:rgba(255,255,255,.6);margin-bottom:8px}
+.spc-watchprob-num{font-size:15px;font-weight:800;color:#FF9500;margin-right:4px}
+.spc-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.spc-tag{font-size:9.5px;font-weight:700;letter-spacing:.3px;border-radius:5px;padding:3px 6px;
+  border:.5px solid transparent}
+.tag-tor {background:rgba(255,59,48,.18);border-color:rgba(255,59,48,.45);color:#FF6B60}
+.tag-wind{background:rgba(0,133,202,.2);border-color:rgba(0,133,202,.5);color:#5AC8FA}
+.tag-hail{background:rgba(255,204,0,.15);border-color:rgba(255,204,0,.4);color:#FFD60A}
+
+/* WFO text-product rows */
+.spc-prod-lbl{font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:rgba(255,255,255,.35);padding:10px 14px 6px}
+.spc-prod{padding:0}
+.spc-prod-head{display:flex;align-items:center;gap:8px;width:100%;padding:12px 13px;background:none;
+  border:none;outline:none;font-family:var(--font);cursor:pointer;text-align:left;
+  -webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent}
+.spc-prod-head:active{opacity:.65}
+.spc-prod-time{font-size:12.5px;font-weight:600;color:#fff}
+.spc-prod-chev{font-size:12px;color:rgba(0,180,230,.7);flex-shrink:0}
+.spc-prod .spc-prose{padding:0 13px 13px}
+
+.spc-empty{padding:16px 14px}
+.spc-empty-txt{font-size:12.5px;line-height:1.6;color:rgba(255,255,255,.6)}
+
+/* ── Severe-weather tags on alert cards (alertTags in app.js) ──────────────── */
+.ac-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.ac-tag{font-size:9.5px;font-weight:700;letter-spacing:.3px;border-radius:5px;padding:3px 7px;
+  border:.5px solid transparent;white-space:nowrap}
+.at-tor  {background:rgba(255,59,48,.18);border-color:rgba(255,59,48,.45);color:#FF6B60}
+.at-hail {background:rgba(255,204,0,.15);border-color:rgba(255,204,0,.4);color:#FFD60A}
+.at-wind {background:rgba(0,133,202,.2);border-color:rgba(0,133,202,.5);color:#5AC8FA}
+.at-flood{background:rgba(0,180,160,.18);border-color:rgba(0,180,160,.45);color:#2ED3B7}
+.at-src  {background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:rgba(255,255,255,.5)}
+/* "Someone is looking at it" — filled, not tinted. Deliberately the loudest
+   thing on the card; it is the tag that changes what you should do. */
+.ac-tag.at-loud{background:#FF3B30;border-color:#FF3B30;color:#3d0000;font-weight:800}
+.at-flood.at-loud{background:#2ED3B7;border-color:#2ED3B7;color:#00312a}
+.ac-motion{font-size:10px;color:rgba(255,255,255,.35);margin-top:7px}
+
+/* Weather-tab banner escalation when a threat is confirmed on the ground. */
+.abanner-loud{background:rgba(255,59,48,.16)!important;border-color:rgba(255,59,48,.5)!important}
+
+/* Tags inside the map's alert popup — reuses the .ac-tag treatments from the
+   alert cards so the same threat reads identically on both surfaces. */
+.nws-pop-tags .ac-tags{margin-top:0;margin-bottom:2px}
+.nws-pop-motion{font-size:10px;color:rgba(255,255,255,.4);margin:6px 0 2px}
+
+/* ── Long-range outlook (Open-Meteo GFS, days 8-14) ──────────────────────────
+   Everything here is doing one job: making sure this is never mistaken for the
+   NWS forecast above it. Muted ground, no weather icons (an icon carries the
+   same visual weight as the NWS rows and implies the same confidence), lighter
+   type, a dashed top rule that reads as a seam rather than a divider, and an
+   explicit badge in the label. */
+/* margin: these boxes are the section, not a list holding cards, so they take the
+   12px inset and 10px gap themselves — they ran edge to edge and touched the
+   climate box below. */
+/* padding matches .card / .ext-period (12px 13px) so the label and rows start on
+   the same vertical line as every card above and below; it was 12/14/10. */
+.lrf-list{background:rgba(120,132,148,.07);border:1px dashed rgba(120,132,148,.38);
+  border-radius:12px;padding:12px 13px;margin:0 12px 10px}
+.lrf-lbl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  color:rgba(255,255,255,.52);margin-bottom:8px}
+.lrf-badge{font-size:9.5px;font-weight:700;letter-spacing:.06em;padding:2px 7px;
+  border-radius:4px;background:rgba(200,16,46,.16);color:#ff8b8b;
+  border:.5px solid rgba(200,16,46,.34);white-space:nowrap}
+.lrf-warn{font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.5);
+  margin:0 0 10px;max-width:52ch}
+.lrf-row{display:flex;align-items:center;gap:10px;padding:7px 0;
+  border-top:.5px solid rgba(255,255,255,.06)}
+.lrf-row:first-of-type{border-top:none}
+.lrf-day{flex:1;min-width:0;font-size:13px;font-weight:600;color:rgba(255,255,255,.72);
+  display:flex;flex-direction:column;line-height:1.25}
+.lrf-date{font-size:10.5px;font-weight:400;color:rgba(255,255,255,.36)}
+.lrf-cond{flex:1.1;min-width:0;font-size:12px;color:rgba(255,255,255,.5);
+  display:flex;align-items:center;gap:6px}
+.lrf-pop{font-size:11px;color:#7fc4f5;white-space:nowrap}
+.lrf-temps{display:flex;gap:8px;align-items:baseline;font-variant-numeric:tabular-nums}
+.lrf-hi{font-size:14px;font-weight:600;color:rgba(255,255,255,.78)}
+.lrf-lo{font-size:13px;color:rgba(255,255,255,.42)}
+.lrf-src{font-size:10.5px;color:rgba(255,255,255,.34);margin-top:9px;
+  display:flex;align-items:center;gap:5px}
+
+/* ── Climate & records (NWS CLI + ACIS) ──────────────────────────────────── */
+.clim-list{background:rgba(0,133,202,.07);border:.5px solid rgba(0,133,202,.26);
+  border-radius:12px;padding:12px 13px;margin:0 12px 10px}
+.clim-lbl{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.clim-stn{font-size:9.5px;font-weight:700;letter-spacing:.06em;padding:2px 7px;
+  border-radius:4px;background:rgba(0,133,202,.2);color:#7fc4f5}
+.clim-record{font-size:12px;font-weight:600;color:#ffcf7a;background:rgba(186,117,23,.16);
+  border:.5px solid rgba(186,117,23,.4);border-radius:8px;padding:7px 10px;margin-bottom:9px}
+.clim-row{display:flex;align-items:baseline;gap:9px;padding:7px 0;
+  border-top:.5px solid rgba(255,255,255,.06)}
+.clim-row:first-of-type{border-top:none}
+.clim-name{flex:1.4;min-width:0;font-size:12.5px;color:rgba(255,255,255,.72);
+  display:flex;flex-direction:column;line-height:1.3}
+.clim-extra{font-size:10px;color:rgba(255,255,255,.34)}
+.clim-obs{font-size:14px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;
+  min-width:52px;text-align:right}
+.clim-norm{font-size:11px;color:rgba(255,255,255,.38);min-width:74px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.clim-dep{font-size:12px;font-weight:600;min-width:48px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.clim-up{color:#ff9b7a}
+.clim-down{color:#7fc4f5}
+.clim-flat{color:rgba(255,255,255,.34);font-weight:400}
+.clim-streak:not(:empty){font-size:12px;color:#ffcf7a;margin-top:9px;padding-top:8px;
+  border-top:.5px dashed rgba(255,255,255,.12)}
+
+/* Climate headline card on the Weather screen. Rides the Storm Center entry's
+   shape so the two read as siblings, with a tag only when today is unusual. */
+.clim-card .sc-entry-title{display:flex;align-items:center;gap:7px}
+.clim-card-tag{font-size:9px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:4px}
+.clim-tag-record{background:rgba(186,117,23,.22);color:#ffcf7a;border:.5px solid rgba(186,117,23,.45)}
+.clim-tag-dry{background:rgba(200,16,46,.16);color:#ff9b7a;border:.5px solid rgba(200,16,46,.34)}
+
+/* ── Tropical (NHC) — Storm Center cards + map popups, js/tropical.js ─────── */
+.trop-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.trop-dot{width:14px;height:14px;border-radius:50%;flex:0 0 auto;border:1.5px solid rgba(255,255,255,.65)}
+.trop-head-txt{min-width:0}
+.trop-name{font-size:16px;font-weight:700;color:#fff;line-height:1.25}
+.trop-class{font-size:12.5px;color:rgba(255,255,255,.62);margin-top:1px}
+.trop-stats{margin:4px 0 6px}
+.trop-pop-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:13px;padding:4px 0;border-bottom:.5px solid rgba(255,255,255,.08)}
+.trop-pop-row:last-child{border-bottom:0}
+.trop-pop-k{color:rgba(255,255,255,.58)}
+.trop-pop-v{color:#fff;font-weight:600;text-align:right}
+.trop-peak{font-size:12.5px;color:#ffd08a;margin:4px 0 8px}
+.trop-pop-src{font-size:11px;color:rgba(255,255,255,.45);margin-top:8px;line-height:1.4}
+.trop-area-row{display:flex;align-items:center;gap:8px;font-size:13px;color:rgba(255,255,255,.82);padding:5px 0;line-height:1.45}
+.trop-area-row .trop-dot{width:11px;height:11px}
+.trop-area-txt b{color:#fff}
+
+
+/* ── Lightning mode (map.js loadLightningFrames) ────────────────────────────
+   A dark outline around every strike cell: the density palette starts at pale
+   yellow, which all but disappears on the light street map without it. Applied
+   per frame layer via className, so the street tiles are untouched. */
+.lightning-frame{filter:drop-shadow(0 0 1px rgba(0,0,0,.9)) drop-shadow(0 0 .5px rgba(0,0,0,.9))}
+
+/* Three base modes (Radar | Satellite | Lightning) outgrow the gap between the
+   fullscreen/refresh buttons and the zoom control on every phone: centred on
+   the whole screen, the 226px switch runs under the refresh button (by 7px on
+   a 375px iPhone, half of "Radar" on a 320px one) until the screen is ~406px
+   wide. On phone widths, slim the buttons and centre the switch in the FREE
+   space instead — its midpoint sits ~19px right of the screen's. Measured
+   clear of both neighbours at 320, 360, 375, 390, 414 and 430px. */
+@media (max-width:429px){
+  .map-base-seg{left:calc(50% + 19px)}
+  .lbtn{padding:5px 7px}
+}
+
+/* ── NOAA CPC 6–10 / 8–14 day outlook — _renderCpcOutlook in app.js ──────── */
+.cpc-card{padding:13px}
+.cpc-row{padding:8px 0;border-bottom:.5px solid rgba(255,255,255,.08)}
+.cpc-row:last-of-type{border-bottom:0}
+.cpc-when{font-size:13px;font-weight:700;color:#fff;margin-bottom:6px}
+.cpc-dates{font-weight:500;color:rgba(255,255,255,.5);margin-left:8px;font-size:12px}
+.cpc-leans{display:flex;flex-direction:column;gap:5px}
+.cpc-lean{display:flex;align-items:baseline;gap:8px;font-size:13px;color:rgba(255,255,255,.85)}
+.cpc-k{flex:0 0 50px;font-size:11px;font-weight:700;letter-spacing:.3px;color:rgba(255,255,255,.45);text-transform:uppercase}
+.cpc-warmer{color:#ffb38a}.cpc-cooler{color:#8ec5ff}.cpc-wetter{color:#7fe0a8}.cpc-drier{color:#e0c07f}.cpc-ec{color:rgba(255,255,255,.6)}
+.cpc-note{font-size:11.5px;line-height:1.5;color:rgba(255,255,255,.5);margin:8px 0 0}
+
+/* ── Winter card + Storm Center Winter tab — js/winter.js ─────────────────── */
+.wtr-card{padding:13px}
+.wtr-badge{display:inline-block;margin-left:8px;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.3px;vertical-align:middle}
+.wtr-total{font-size:15px;color:#fff;margin:6px 0 8px}
+.wtr-total b{font-size:20px}
+.wtr-sub{font-size:11px;color:rgba(255,255,255,.45);margin-left:4px}
+.wtr-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.wtr-chip{font-size:12px;color:rgba(255,255,255,.7);background:rgba(90,200,250,.12);border:.5px solid rgba(90,200,250,.3);border-radius:8px;padding:3px 8px}
+.wtr-chip b{color:#fff}
+.wtr-line{font-size:13px;color:rgba(255,255,255,.8);padding:3px 0}
+.wtr-line b{color:#fff}
