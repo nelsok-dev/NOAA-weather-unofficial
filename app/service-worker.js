@@ -1,7 +1,7 @@
 // Bump BUILD to invalidate the static-shell cache whenever index.html changes.
 // STATIC_ASSETS lists each asset at its exact versioned URL from index.html so
 // the service worker always caches what the shell actually requests.
-const BUILD = 284;
+const BUILD = 286;
 const CACHE      = 'noaa-wx-v' + BUILD;  // shell + vendor (versioned)
 const LIVE_CACHE = 'noaa-wx-live-v1';     // API/data responses (long-lived, capped)
 
