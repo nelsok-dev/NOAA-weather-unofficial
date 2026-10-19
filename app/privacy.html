@@ -38,7 +38,7 @@
 </head>
 <body>
   <h1>Privacy Policy</h1>
-  <div class="sub">NOAA Weather Unofficial &mdash; Effective August 1, 2026</div>
+  <div class="sub">NOAA Weather Unofficial &mdash; Effective October 18, 2026</div>
 
   <div class="card">
     <p class="disclaimer">
@@ -87,13 +87,17 @@
   <p>Deleting the app removes all of it.</p>
 
   <h2>Home Screen Widget</h2>
-  <p>The optional home screen and Lock Screen widgets read your saved location and unit preferences from a storage area shared with the app, and fetch forecast data directly from the National Weather Service API to refresh. The widget sends nothing to us and has no access to your location beyond what the app has already stored.</p>
+  <p>The optional home screen and Lock Screen widgets read your saved location and unit preferences from a storage area shared with the app. To refresh, they fetch forecast data from the National Weather Service API. The radar widget also fetches the latest radar image for the nearest NEXRAD station from radar.weather.gov. The widgets send nothing to us and have no access to your location beyond what the app has already stored.</p>
+
+  <h2>Shared Links</h2>
+  <p>When you share a place, the link points to nelsok-dev.github.io, which is hosted by GitHub Pages. The link includes the place name and its coordinates. If you share your current location, the coordinates are rounded to about 1 km. When someone opens the link, the app opens to that place if they have it installed. If not, the place opens in a web version of the app. GitHub receives the request like any website and can see the link. We receive nothing.</p>
 
   <h2>Third-Party Services</h2>
   <p>The app makes requests directly from your device to the public services below. Each has its own privacy practices, and each can see your IP address as part of any normal internet request. We have no control over, and receive no data from, these services.</p>
   <table>
     <tr><th>Service</th><th>Purpose</th><th>Receives</th></tr>
     <tr><td>api.weather.gov <small>NWS/NOAA</small></td><td>Forecasts, conditions, alerts</td><td>Coordinates or forecast zone</td></tr>
+    <tr><td>radar.weather.gov <small>NWS/NOAA</small></td><td>Latest radar image for the radar widget</td><td>Nearest radar station ID, not your location</td></tr>
     <tr><td>opengeo.ncep.noaa.gov <small>RIDGE2</small></td><td>NEXRAD radar imagery</td><td>Map area viewed</td></tr>
     <tr><td>gibs.earthdata.nasa.gov <small>NASA</small></td><td>GOES satellite imagery</td><td>Map area viewed</td></tr>
     <tr><td>mapservices.weather.noaa.gov <small>NOAA NHC, WPC, CPC</small></td><td>Hurricane tracks; winter storm severity and snow/ice odds; 6–14 day outlook</td><td>Location rounded to ~1 km (winter and outlook lookups); nothing for hurricane tracks</td></tr>
